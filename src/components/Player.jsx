@@ -284,17 +284,20 @@ useEffect(() => {
       {fullScreen && <FullScreenPlayer onClose={() => setFullScreen(false)} audioRef={audioRef} />}
 
       <div style={{
-        height: "var(--player-height)",
-        background: "var(--bg-secondary)",
-        borderTop: "1px solid var(--border)",
-        display: "flex", alignItems: "center",
-        padding: "0 24px", gap: "24px",
-        position: window.innerWidth <= 768 ? "fixed" : "relative",
-        bottom: window.innerWidth <= 768 ? "65px" : "auto",
-        left: 0, right: 0,
-        zIndex: 49,
-        cursor: "pointer",
-        }}>
+  height: "var(--player-height)",
+  background: "var(--bg-secondary)",
+  borderTop: "1px solid var(--border)",
+  display: "flex", alignItems: "center",
+  padding: "0 12px", gap: "8px",
+  position: window.innerWidth <= 768 ? "fixed" : "relative",
+  bottom: window.innerWidth <= 768 ? "65px" : "auto",
+  left: 0, right: 0,
+  zIndex: 49,
+  cursor: "pointer",
+  width: "100%",
+  boxSizing: "border-box",
+  overflow: "hidden",
+}}>
         {/* Progress bar */}
         <div onClick={(e) => {
           e.stopPropagation();
@@ -350,16 +353,17 @@ useEffect(() => {
           </button>
         </div>
 
-        {/* Time + Volume */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, justifyContent: "flex-end" }}>
-          <span style={{ fontSize: "12px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
-            {formatTime(progress)} / {formatTime(duration)}
-          </span>
-          <span style={{ color: "var(--text-muted)", fontSize: "16px" }}>🔊</span>
-          <input type="range" min="0" max="1" step="0.01" value={volume}
-            onChange={(e) => setVolume(parseFloat(e.target.value))}
-            style={{ width: "80px", accentColor: "var(--accent)", cursor: "pointer" }} />
-        </div>
+        {window.innerWidth > 768 && (
+  <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, justifyContent: "flex-end" }}>
+    <span style={{ fontSize: "12px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+      {formatTime(progress)} / {formatTime(duration)}
+    </span>
+    <span style={{ color: "var(--text-muted)", fontSize: "16px" }}>🔊</span>
+    <input type="range" min="0" max="1" step="0.01" value={volume}
+      onChange={(e) => setVolume(parseFloat(e.target.value))}
+      style={{ width: "80px", accentColor: "var(--accent)", cursor: "pointer" }} />
+  </div>
+)}
       </div>
     </>
   );
