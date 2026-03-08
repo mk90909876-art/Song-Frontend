@@ -26,7 +26,7 @@ export default function Sidebar() {
 
   if (isMobile) {
     return (
-      <nav style={{
+      <nav id="bottom-nav" style={{
         position: "fixed", bottom: 0, left: 0, right: 0,
         background: "var(--bg-secondary)",
         borderTop: "1px solid var(--border)",
