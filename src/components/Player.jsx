@@ -8,6 +8,8 @@ const formatTime = (s) => {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 };
 
+const truncate = (str, n = 35) => str?.length > n ? str.slice(0, n).trimEnd() + "…" : str;
+
 const Icons = {
   Play: () => (<svg viewBox="0 0 24 24" fill="currentColor" width="100%" height="100%"><polygon points="5,3 19,12 5,21"/></svg>),
   Pause: () => (<svg viewBox="0 0 24 24" fill="currentColor" width="100%" height="100%"><rect x="5" y="3" width="4" height="18" rx="1"/><rect x="15" y="3" width="4" height="18" rx="1"/></svg>),
@@ -41,74 +43,85 @@ const loadYTApi = () => {
   });
 };
 
-// ── Draggable Queue — uses non-passive touch events ───────────
+// ── DragHandle — mounts its own non-passive touch listeners ───
+const DragHandle = ({ onDragStart, onDragMove, onDragEnd }) => {
+  const ref = useRef(null);
+  const cbRefs = useRef({ onDragStart, onDragMove, onDragEnd });
+  cbRefs.current = { onDragStart, onDragMove, onDragEnd };
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ts = (e) => cbRefs.current.onDragStart(e);
+    const tm = (e) => cbRefs.current.onDragMove(e);
+    const te = (e) => cbRefs.current.onDragEnd(e);
+    el.addEventListener("touchstart", ts, { passive: true });
+    el.addEventListener("touchmove", tm, { passive: false });
+    el.addEventListener("touchend", te, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", ts);
+      el.removeEventListener("touchmove", tm);
+      el.removeEventListener("touchend", te);
+    };
+  }, []);
+
+  return (
+    <div ref={ref} style={{ width: "20px", height: "20px", color: "rgba(255,255,255,0.35)", flexShrink: 0, cursor: "grab", touchAction: "none" }}>
+      <Icons.DragHandle />
+    </div>
+  );
+};
+
+// ── Draggable Queue ───────────────────────────────────────────
 const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }) => {
   const [draggingIndex, setDraggingIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const itemRefs = useRef([]);
-  const touchState = useRef({ index: null, dragging: false, startY: 0 });
-  const dragOverRef = useRef(null); // ref version for use in touch handlers
+  const state = useRef({ index: null, dragging: false, startY: 0, over: null });
 
+  const getDragOver = (y) => {
+    for (let i = 0; i < itemRefs.current.length; i++) {
+      const rect = itemRefs.current[i]?.getBoundingClientRect();
+      if (rect && y >= rect.top && y <= rect.bottom) return i;
+    }
+    return null;
+  };
+
+  const makeTouchHandlers = (i) => ({
+    onDragStart: (e) => {
+      state.current = { index: i, dragging: false, startY: e.touches[0].clientY, over: null };
+    },
+    onDragMove: (e) => {
+      const { startY, index } = state.current;
+      if (index === null) return;
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (dy > 8) {
+        state.current.dragging = true;
+        e.preventDefault();
+        const over = getDragOver(e.touches[0].clientY);
+        state.current.over = over;
+        setDraggingIndex(index);
+        setDragOverIndex(over);
+      }
+    },
+    onDragEnd: () => {
+      const { index, dragging, over } = state.current;
+      if (dragging && index !== null && over !== null && index !== over) {
+        moveQueueItem(index, over);
+      }
+      state.current = { index: null, dragging: false, startY: 0, over: null };
+      setDraggingIndex(null);
+      setDragOverIndex(null);
+    },
+  });
+
+  // Desktop drag
   const onDragStart = (i) => setDraggingIndex(i);
-  const onDragOver = (e, i) => { e.preventDefault(); setDragOverIndex(i); dragOverRef.current = i; };
+  const onDragOver = (e, i) => { e.preventDefault(); setDragOverIndex(i); };
   const onDrop = (i) => {
     if (draggingIndex !== null && draggingIndex !== i) moveQueueItem(draggingIndex, i);
-    setDraggingIndex(null); setDragOverIndex(null); dragOverRef.current = null;
+    setDraggingIndex(null); setDragOverIndex(null);
   };
-  const onDragEnd = () => { setDraggingIndex(null); setDragOverIndex(null); dragOverRef.current = null; };
-
-  // Attach non-passive touch listeners directly to each drag handle DOM node
-  useEffect(() => {
-    const handles = itemRefs.current.map((_, i) => {
-      const el = document.getElementById(`drag-handle-${i}`);
-      if (!el) return null;
-
-      const onTouchStart = (e) => {
-        touchState.current = { index: i, dragging: false, startY: e.touches[0].clientY };
-      };
-      const onTouchMove = (e) => {
-        const { index, startY } = touchState.current;
-        if (index === null) return;
-        const dy = Math.abs(e.touches[0].clientY - startY);
-        if (dy > 8) {
-          touchState.current.dragging = true;
-          e.preventDefault(); // works because listener is non-passive
-          setDraggingIndex(index);
-          const y = e.touches[0].clientY;
-          for (let j = 0; j < itemRefs.current.length; j++) {
-            const rect = itemRefs.current[j]?.getBoundingClientRect();
-            if (rect && y >= rect.top && y <= rect.bottom) {
-              setDragOverIndex(j);
-              dragOverRef.current = j;
-              break;
-            }
-          }
-        }
-      };
-      const onTouchEnd = () => {
-        const { index, dragging } = touchState.current;
-        const over = dragOverRef.current;
-        if (dragging && index !== null && over !== null && index !== over) {
-          moveQueueItem(index, over);
-        }
-        touchState.current = { index: null, dragging: false, startY: 0 };
-        setDraggingIndex(null); setDragOverIndex(null); dragOverRef.current = null;
-      };
-
-      el.addEventListener("touchstart", onTouchStart, { passive: true });
-      el.addEventListener("touchmove", onTouchMove, { passive: false }); // non-passive!
-      el.addEventListener("touchend", onTouchEnd, { passive: true });
-      return { el, onTouchStart, onTouchMove, onTouchEnd };
-    }).filter(Boolean);
-
-    return () => {
-      handles.forEach(({ el, onTouchStart, onTouchMove, onTouchEnd }) => {
-        el.removeEventListener("touchstart", onTouchStart);
-        el.removeEventListener("touchmove", onTouchMove);
-        el.removeEventListener("touchend", onTouchEnd);
-      });
-    };
-  }, [queue.length]); // re-attach when queue length changes
 
   if (queue.length === 0) return (
     <div style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", textAlign: "center", paddingTop: "20px" }}>Queue is empty</div>
@@ -116,37 +129,34 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
 
   return (
     <div>
-      {queue.map((song, i) => (
-        <div key={`${song.id}-${i}`} ref={el => itemRefs.current[i] = el}
-          draggable onDragStart={() => onDragStart(i)} onDragOver={(e) => onDragOver(e, i)}
-          onDrop={() => onDrop(i)} onDragEnd={onDragEnd}
-          style={{
-            display: "flex", alignItems: "center", gap: "8px", padding: "8px",
-            borderRadius: "10px", marginBottom: "4px",
-            background: dragOverIndex === i ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)",
-            opacity: draggingIndex === i ? 0.4 : 1,
-            transition: "background 0.15s", userSelect: "none",
-          }}>
-          {/* Drag handle — touch events attached via useEffect above */}
-          <div id={`drag-handle-${i}`}
-            style={{ width: "20px", height: "20px", color: "rgba(255,255,255,0.35)", flexShrink: 0, cursor: "grab", touchAction: "none" }}>
-            <Icons.DragHandle />
-          </div>
-          {/* Click to play */}
-          <div onClick={() => playFromQueue(i)}
-            style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0, cursor: "pointer" }}>
-            <img src={song.thumbnail} alt="" style={{ width: "40px", height: "40px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: "13px", fontWeight: 600, color: "white", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{song.title}</div>
-              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{song.artist}</div>
+      {queue.map((song, i) => {
+        const handlers = makeTouchHandlers(i);
+        return (
+          <div key={`${song.id}-${i}`} ref={el => itemRefs.current[i] = el}
+            draggable onDragStart={() => onDragStart(i)} onDragOver={(e) => onDragOver(e, i)}
+            onDrop={() => onDrop(i)} onDragEnd={() => { setDraggingIndex(null); setDragOverIndex(null); }}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px", padding: "8px",
+              borderRadius: "10px", marginBottom: "4px",
+              background: dragOverIndex === i ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)",
+              opacity: draggingIndex === i ? 0.4 : 1,
+              transition: "background 0.15s", userSelect: "none",
+            }}>
+            <DragHandle {...handlers} />
+            <div onClick={() => playFromQueue(i)} style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0, cursor: "pointer" }}>
+              <img src={song.thumbnail} alt="" style={{ width: "40px", height: "40px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: "white", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(song.title, 32)}</div>
+                <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(song.artist, 28)}</div>
+              </div>
             </div>
+            <button onClick={() => removeFromQueue(i)}
+              style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "26px", height: "26px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Icons.Remove />
+            </button>
           </div>
-          <button onClick={() => removeFromQueue(i)}
-            style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "26px", height: "26px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Icons.Remove />
-          </button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
@@ -206,7 +216,6 @@ export default function Player() {
     return () => window.removeEventListener("resize", handle);
   }, []);
 
-  // Init YT player ONCE
   useEffect(() => {
     if (document.getElementById("yt-player")) return;
     const div = document.createElement("div");
@@ -222,7 +231,6 @@ export default function Player() {
           onReady: (e) => {
             e.target.setVolume(usePlayerStore.getState().volume * 100);
             window._ytPlayer = e.target;
-            // Load any pending song
             const song = usePlayerStore.getState().currentSong;
             if (song) e.target.loadVideoById(song.id);
           },
@@ -237,7 +245,6 @@ export default function Player() {
                   usePlayerStore.getState().setProgress(window._ytPlayer.getCurrentTime());
                 }
               }, 500);
-              // MediaSession
               const song = usePlayerStore.getState().currentSong;
               if ("mediaSession" in navigator && song) {
                 navigator.mediaSession.metadata = new MediaMetadata({
@@ -266,9 +273,6 @@ export default function Player() {
     return () => clearInterval(intervalRef.current);
   }, []);
 
-  // NO isPlaying sync effect — store calls _ytPlayer directly now
-  // NO currentSong effect — playSong() in store calls _ytPlayer directly now
-
   if (!currentSong) return null;
 
   const handleSeekStart = () => { setSeeking(true); setSeekValue(progress); };
@@ -293,19 +297,16 @@ export default function Player() {
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.7))" }} />
 
       <div style={{ position: "relative", zIndex: 1, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 8px" }}>
           <button onClick={() => setShowFullScreen(false)} style={{ ...btn("white"), width: "36px", height: "36px" }}><Icons.ChevronDown /></button>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px" }}>Now Playing</div>
-            <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.8)", fontWeight: 600, marginTop: "2px" }}>{currentSong.artist}</div>
+            <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.8)", fontWeight: 600, marginTop: "2px" }}>{truncate(currentSong.artist, 30)}</div>
           </div>
           <div style={{ width: "36px" }} />
         </div>
 
-        {/* Content */}
         <div style={{ flex: 1, display: "flex", flexDirection: isWide ? "row" : "column", gap: isWide ? "24px" : 0, padding: isWide ? "8px 28px 20px" : "0 24px 16px", overflow: "hidden", minHeight: 0 }}>
-
           {/* Player panel */}
           <div style={{ flex: isWide ? "0 0 calc(50% - 12px)" : "none", display: "flex", flexDirection: "column", justifyContent: "center", overflow: isWide ? "visible" : "auto", minHeight: 0 }}>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
@@ -314,10 +315,10 @@ export default function Player() {
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: isWide ? "17px" : "20px", fontWeight: 700, color: "white", marginBottom: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.title}</div>
-                <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)" }}>{currentSong.artist}</div>
+                <div style={{ fontSize: isWide ? "16px" : "18px", fontWeight: 700, color: "white", marginBottom: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.title}</div>
+                <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.artist}</div>
               </div>
-              <button style={{ ...btn("rgba(255,255,255,0.5)"), width: "36px", height: "36px", marginLeft: "8px" }}><Icons.Heart filled={false} /></button>
+              <button style={{ ...btn("rgba(255,255,255,0.5)"), width: "36px", height: "36px", marginLeft: "8px", flexShrink: 0 }}><Icons.Heart filled={false} /></button>
             </div>
 
             <div style={{ marginBottom: "6px" }}>
@@ -352,7 +353,6 @@ export default function Player() {
               <button onClick={toggleRepeat} style={{ ...btn(repeat !== "none" ? "var(--accent)" : "rgba(255,255,255,0.5)"), width: "34px", height: "34px" }}><Icons.Repeat mode={repeat} /></button>
             </div>
 
-            {/* Up Next toggle portrait */}
             {!isWide && (
               <button onClick={() => setShowQueue(!showQueue)}
                 style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "20px", padding: "8px 20px", cursor: "pointer", fontSize: "13px", fontWeight: 600, width: "100%" }}>
@@ -377,7 +377,6 @@ export default function Player() {
               <div style={{ fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px", flexShrink: 0 }}>
                 Up Next ({queue.length})
               </div>
-              {/* Scrollable container */}
               <div style={{ overflowY: "auto", flex: 1, WebkitOverflowScrolling: "touch" }}>
                 <DraggableQueue queue={queue} removeFromQueue={removeFromQueue} moveQueueItem={moveQueueItem} playFromQueue={playFromQueue} />
               </div>
@@ -396,7 +395,6 @@ export default function Player() {
         bottom: isMobile ? `${navHeight}px` : "auto",
         left: 0, right: 0, zIndex: 49, boxSizing: "border-box", width: "100%",
       }}>
-        {/* Progress line */}
         <div style={{ height: "3px", background: "var(--border)", position: "relative", overflow: "hidden" }}>
           <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${duration ? (progress / duration) * 100 : 0}%`, background: "var(--accent)", transition: "width 0.5s linear" }} />
           <input type="range" min="0" max={duration || 100} value={seeking ? seekValue : progress}
@@ -418,8 +416,8 @@ export default function Player() {
               )}
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.title}</div>
-              <div style={{ fontSize: "11px", color: "var(--text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.artist}</div>
+              <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(currentSong.title, 40)}</div>
+              <div style={{ fontSize: "11px", color: "var(--text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(currentSong.artist, 35)}</div>
             </div>
           </div>
 
