@@ -45,10 +45,9 @@ export const usePlayerStore = create((set, get) => ({
   fetchRelated: async (song) => {
     try {
       const token = localStorage.getItem("access_token");
-      // Search using song title + artist — much more relevant than YouTube's "next" endpoint
-      const query = `${song.title} ${song.artist}`.replace(/\(.*?\)|\[.*?\]/g, "").trim(); // strip "(Official Video)" etc
+      // Use YouTube Mix — most similar songs to current
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/music/search?q=${encodeURIComponent(query)}`,
+        `${import.meta.env.VITE_API_URL}/api/music/mix/${song.id}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await res.json();
