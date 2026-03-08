@@ -24,7 +24,8 @@ export const usePlayerStore = create((set, get) => ({
       ? [currentSong, ...history.filter(h => h.id !== currentSong.id)].slice(0, MAX_HISTORY)
       : history;
     set({ currentSong: song, isPlaying: true, progress: 0, duration: 0, history: newHistory });
-    // Directly load in YT player — don't rely on useEffect
+
+    // Directly load in YT player
     const tryLoad = () => {
       if (window._ytPlayer?.loadVideoById) {
         window._ytPlayer.loadVideoById(song.id);
@@ -33,24 +34,37 @@ export const usePlayerStore = create((set, get) => ({
       }
     };
     tryLoad();
+
+    // Auto queue: only fetch if queue is getting low
     if (autoQueue && queue.filter(s => s.id !== song.id).length < 3) {
-      setTimeout(() => get().fetchRelated(song.id), 2000);
+      setTimeout(() => get().fetchRelated(song), 2000);
     }
   },
 
-  fetchRelated: async (videoId) => {
+  // Search by title + artist for relevant results
+  fetchRelated: async (song) => {
     try {
       const token = localStorage.getItem("access_token");
+      // Search using song title + artist — much more relevant than YouTube's "next" endpoint
+      const query = `${song.title} ${song.artist}`.replace(/\(.*?\)|\[.*?\]/g, "").trim(); // strip "(Official Video)" etc
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/music/related/${videoId}`,
+        `${import.meta.env.VITE_API_URL}/api/music/search?q=${encodeURIComponent(query)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await res.json();
       if (data.results?.length) {
-        const { queue, currentSong } = get();
-        const existingIds = new Set([...queue.map(s => s.id), currentSong?.id]);
-        const newSongs = data.results.filter(s => !existingIds.has(s.id)).slice(0, 5);
-        set({ queue: [...queue, ...newSongs] });
+        const { queue, currentSong, history } = get();
+        const existingIds = new Set([
+          ...queue.map(s => s.id),
+          currentSong?.id,
+          ...history.slice(0, 5).map(s => s.id), // avoid recently played too
+        ]);
+        const newSongs = data.results
+          .filter(s => !existingIds.has(s.id))
+          .slice(0, 5);
+        if (newSongs.length > 0) {
+          set({ queue: [...queue, ...newSongs] });
+        }
       }
     } catch (err) {
       console.error("Failed to fetch related:", err);
@@ -58,7 +72,7 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   nextSong: () => {
-    const { queue, shuffle, repeat, history, currentSong } = get();
+    const { queue, shuffle, repeat, history } = get();
     if (repeat === "one") {
       window._ytPlayer?.seekTo?.(0, true);
       window._ytPlayer?.playVideo?.();
@@ -89,23 +103,18 @@ export const usePlayerStore = create((set, get) => ({
       set({ progress: 0 });
       return;
     }
-    if (history.length > 1) {
-      get().playSong(history[1]);
-    } else if (history.length === 1) {
-      get().playSong(history[0]);
-    }
+    if (history.length > 1) get().playSong(history[1]);
+    else if (history.length === 1) get().playSong(history[0]);
   },
 
   playFromQueue: (index) => {
     const { queue } = get();
     const song = queue[index];
     if (!song) return;
-    const newQueue = queue.filter((_, i) => i !== index);
-    set({ queue: newQueue });
+    set({ queue: queue.filter((_, i) => i !== index) });
     get().playSong(song);
   },
 
-  // Directly call YT player — no useEffect needed
   togglePlay: () => {
     const { isPlaying } = get();
     if (isPlaying) {
