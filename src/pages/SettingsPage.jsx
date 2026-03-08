@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useAuthStore } from "../store/authStore";
 import { usePlayerStore } from "../store/playerStore";
+import { useLibraryStore } from "../store/libraryStore";
+import api from "../utils/api";
 
 const THEMES = [
   { id: "dark", label: "Dark", icon: "🌙" },
@@ -35,6 +37,144 @@ export const applyTheme = (theme) => {
   }
 };
 
+// ── Spotify Import Section ────────────────────────────────────
+function SpotifyImport() {
+  const [url, setUrl] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | loading | done | error
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const { createPlaylist, addSongToPlaylist } = useLibraryStore();
+
+  const handleImport = async () => {
+    if (!url.trim()) return;
+    if (!url.includes("spotify.com/playlist/")) {
+      setError("Please enter a valid Spotify playlist URL");
+      return;
+    }
+    setStatus("loading");
+    setError("");
+    setResult(null);
+    setSaved(false);
+    try {
+      const { data } = await api.post("/api/music/import-spotify", { url: url.trim() });
+      setResult(data);
+      setStatus("done");
+    } catch (err) {
+      setError(err.response?.data?.error || "Import failed. Make sure the playlist is public.");
+      setStatus("error");
+    }
+  };
+
+  const saveToLibrary = async () => {
+    if (!result?.matched?.length || saving || saved) return;
+    setSaving(true);
+    try {
+      const playlist = await createPlaylist(result.playlistName, "Imported from Spotify");
+      await Promise.all(result.matched.map(s => addSongToPlaylist(playlist.id, s)));
+      setSaved(true);
+    } catch (err) {
+      setError("Failed to save to library");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reset = () => {
+    setUrl(""); setStatus("idle"); setResult(null); setError(""); setSaved(false);
+  };
+
+  return (
+    <div>
+      <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "14px", lineHeight: "1.5" }}>
+        Paste a public Spotify playlist URL to import it into your library.
+      </p>
+
+      {status === "idle" || status === "error" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <input
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            placeholder="https://open.spotify.com/playlist/..."
+            style={{
+              width: "100%", padding: "10px 14px", background: "var(--bg-primary)",
+              border: "1px solid var(--border)", borderRadius: "8px",
+              color: "var(--text-primary)", fontSize: "13px", outline: "none",
+              boxSizing: "border-box", fontFamily: "DM Sans",
+            }}
+          />
+          {error && <div style={{ fontSize: "12px", color: "#ff6b6b" }}>{error}</div>}
+          <button onClick={handleImport} disabled={!url.trim()} style={{
+            padding: "10px", background: "#1DB954", border: "none",
+            borderRadius: "8px", color: "#fff", fontSize: "13px", fontWeight: 700,
+            cursor: url.trim() ? "pointer" : "not-allowed", opacity: url.trim() ? 1 : 0.5,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+          }}>
+            <span>♫</span> Import from Spotify
+          </button>
+        </div>
+      ) : status === "loading" ? (
+        <div style={{ textAlign: "center", padding: "20px 0" }}>
+          <div style={{ fontSize: "24px", marginBottom: "10px", animation: "spin 1s linear infinite", display: "inline-block" }}>↻</div>
+          <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Matching songs on YouTube…</div>
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>This may take 30–60 seconds</div>
+        </div>
+      ) : status === "done" && result ? (
+        <div>
+          {/* Result summary */}
+          <div style={{ background: "var(--bg-primary)", borderRadius: "10px", padding: "14px", marginBottom: "12px" }}>
+            <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "8px", color: "var(--text-primary)" }}>
+              "{result.playlistName}"
+            </div>
+            <div style={{ display: "flex", gap: "16px", fontSize: "13px" }}>
+              <span style={{ color: "#1DB954" }}>✓ {result.matchedCount} matched</span>
+              {result.failedCount > 0 && <span style={{ color: "var(--text-muted)" }}>✗ {result.failedCount} not found</span>}
+              <span style={{ color: "var(--text-secondary)" }}>of {result.totalTracks} songs</span>
+            </div>
+          </div>
+
+          {/* Preview songs */}
+          <div style={{ maxHeight: "200px", overflowY: "auto", marginBottom: "12px", borderRadius: "8px", border: "1px solid var(--border)" }}>
+            {result.matched.slice(0, 20).map((song, i) => (
+              <div key={song.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", borderBottom: i < Math.min(result.matched.length, 20) - 1 ? "1px solid var(--border)" : "none" }}>
+                <img src={song.thumbnail} alt="" style={{ width: "32px", height: "32px", borderRadius: "4px", objectFit: "cover", flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{song.title}</div>
+                  <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>{song.artist}</div>
+                </div>
+              </div>
+            ))}
+            {result.matched.length > 20 && (
+              <div style={{ padding: "8px 10px", fontSize: "12px", color: "var(--text-muted)", textAlign: "center" }}>
+                +{result.matched.length - 20} more songs
+              </div>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button onClick={saveToLibrary} disabled={saving || saved} style={{
+              flex: 1, padding: "10px", background: saved ? "var(--bg-elevated)" : "#1DB954",
+              border: "none", borderRadius: "8px", color: saved ? "var(--text-secondary)" : "#fff",
+              fontSize: "13px", fontWeight: 700, cursor: saving || saved ? "default" : "pointer",
+            }}>
+              {saving ? "Saving…" : saved ? "✓ Saved to Library" : "Save to Library"}
+            </button>
+            <button onClick={reset} style={{
+              padding: "10px 16px", background: "var(--bg-primary)", border: "1px solid var(--border)",
+              borderRadius: "8px", color: "var(--text-secondary)", fontSize: "13px", cursor: "pointer",
+            }}>
+              Import Another
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ── Main Settings Page ────────────────────────────────────────
 export default function SettingsPage() {
   const { user, logout } = useAuthStore();
   const { autoQueue, toggleAutoQueue } = usePlayerStore();
@@ -91,6 +231,11 @@ export default function SettingsPage() {
         </SettingRow>
       </Section>
 
+      {/* Spotify Import */}
+      <Section title="Import from Spotify">
+        <SpotifyImport />
+      </Section>
+
       {/* Account */}
       <Section title="Account">
         <SettingRow label="Log out" desc="Sign out of your account">
@@ -107,9 +252,11 @@ export default function SettingsPage() {
       <Section title="About">
         <div style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: "1.6" }}>
           <p>Song — a private music player for friends.</p>
-          <p style={{ marginTop: "6px", color: "var(--text-muted)" }}>Streams audio via yt-dlp · No ads · No tracking</p>
+          <p style={{ marginTop: "6px", color: "var(--text-muted)" }}>Streams audio via YouTube · No ads · No tracking</p>
         </div>
       </Section>
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
