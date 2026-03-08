@@ -14,13 +14,7 @@ const Icons = {
   Next: () => (<svg viewBox="0 0 24 24" fill="currentColor" width="100%" height="100%"><polygon points="5,3 15,12 5,21"/><rect x="17" y="3" width="3" height="18" rx="1"/></svg>),
   Prev: () => (<svg viewBox="0 0 24 24" fill="currentColor" width="100%" height="100%"><polygon points="19,3 9,12 19,21"/><rect x="4" y="3" width="3" height="18" rx="1"/></svg>),
   Shuffle: () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="100%" height="100%"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>),
-  Repeat: ({ mode }) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="100%" height="100%">
-      <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-      <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-      {mode === "one" && <text x="9" y="15" fontSize="6" fill="currentColor" stroke="none" fontWeight="bold">1</text>}
-    </svg>
-  ),
+  Repeat: ({ mode }) => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="100%" height="100%"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>{mode === "one" && <text x="9" y="15" fontSize="6" fill="currentColor" stroke="none" fontWeight="bold">1</text>}</svg>),
   ChevronDown: () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" width="100%" height="100%"><polyline points="6 9 12 15 18 9"/></svg>),
   ChevronUp: () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" width="100%" height="100%"><polyline points="6 15 12 9 18 15"/></svg>),
   Queue: () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="100%" height="100%"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="3" cy="18" r="1" fill="currentColor" stroke="none"/></svg>),
@@ -47,48 +41,74 @@ const loadYTApi = () => {
   });
 };
 
-// ── Draggable Queue ───────────────────────────────────────────
+// ── Draggable Queue — uses non-passive touch events ───────────
 const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }) => {
   const [draggingIndex, setDraggingIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const itemRefs = useRef([]);
-  const touchState = useRef({ index: null, isDragging: false, startY: 0 });
+  const touchState = useRef({ index: null, dragging: false, startY: 0 });
+  const dragOverRef = useRef(null); // ref version for use in touch handlers
 
-  // Desktop drag
   const onDragStart = (i) => setDraggingIndex(i);
-  const onDragOver = (e, i) => { e.preventDefault(); setDragOverIndex(i); };
+  const onDragOver = (e, i) => { e.preventDefault(); setDragOverIndex(i); dragOverRef.current = i; };
   const onDrop = (i) => {
     if (draggingIndex !== null && draggingIndex !== i) moveQueueItem(draggingIndex, i);
-    setDraggingIndex(null); setDragOverIndex(null);
+    setDraggingIndex(null); setDragOverIndex(null); dragOverRef.current = null;
   };
+  const onDragEnd = () => { setDraggingIndex(null); setDragOverIndex(null); dragOverRef.current = null; };
 
-  // Mobile touch — only on drag handle
-  const onHandleTouchStart = (e, i) => {
-    touchState.current = { index: i, isDragging: false, startY: e.touches[0].clientY };
-  };
-  const onHandleTouchMove = (e) => {
-    const { index, startY } = touchState.current;
-    if (index === null) return;
-    const dy = Math.abs(e.touches[0].clientY - startY);
-    if (dy > 5) {
-      touchState.current.isDragging = true;
-      e.preventDefault(); // only block scroll when actually dragging
-      setDraggingIndex(index);
-      const y = e.touches[0].clientY;
-      for (let i = 0; i < itemRefs.current.length; i++) {
-        const rect = itemRefs.current[i]?.getBoundingClientRect();
-        if (rect && y >= rect.top && y <= rect.bottom) { setDragOverIndex(i); break; }
-      }
-    }
-  };
-  const onHandleTouchEnd = () => {
-    const { index, isDragging } = touchState.current;
-    if (isDragging && index !== null && dragOverIndex !== null && index !== dragOverIndex) {
-      moveQueueItem(index, dragOverIndex);
-    }
-    touchState.current = { index: null, isDragging: false, startY: 0 };
-    setDraggingIndex(null); setDragOverIndex(null);
-  };
+  // Attach non-passive touch listeners directly to each drag handle DOM node
+  useEffect(() => {
+    const handles = itemRefs.current.map((_, i) => {
+      const el = document.getElementById(`drag-handle-${i}`);
+      if (!el) return null;
+
+      const onTouchStart = (e) => {
+        touchState.current = { index: i, dragging: false, startY: e.touches[0].clientY };
+      };
+      const onTouchMove = (e) => {
+        const { index, startY } = touchState.current;
+        if (index === null) return;
+        const dy = Math.abs(e.touches[0].clientY - startY);
+        if (dy > 8) {
+          touchState.current.dragging = true;
+          e.preventDefault(); // works because listener is non-passive
+          setDraggingIndex(index);
+          const y = e.touches[0].clientY;
+          for (let j = 0; j < itemRefs.current.length; j++) {
+            const rect = itemRefs.current[j]?.getBoundingClientRect();
+            if (rect && y >= rect.top && y <= rect.bottom) {
+              setDragOverIndex(j);
+              dragOverRef.current = j;
+              break;
+            }
+          }
+        }
+      };
+      const onTouchEnd = () => {
+        const { index, dragging } = touchState.current;
+        const over = dragOverRef.current;
+        if (dragging && index !== null && over !== null && index !== over) {
+          moveQueueItem(index, over);
+        }
+        touchState.current = { index: null, dragging: false, startY: 0 };
+        setDraggingIndex(null); setDragOverIndex(null); dragOverRef.current = null;
+      };
+
+      el.addEventListener("touchstart", onTouchStart, { passive: true });
+      el.addEventListener("touchmove", onTouchMove, { passive: false }); // non-passive!
+      el.addEventListener("touchend", onTouchEnd, { passive: true });
+      return { el, onTouchStart, onTouchMove, onTouchEnd };
+    }).filter(Boolean);
+
+    return () => {
+      handles.forEach(({ el, onTouchStart, onTouchMove, onTouchEnd }) => {
+        el.removeEventListener("touchstart", onTouchStart);
+        el.removeEventListener("touchmove", onTouchMove);
+        el.removeEventListener("touchend", onTouchEnd);
+      });
+    };
+  }, [queue.length]); // re-attach when queue length changes
 
   if (queue.length === 0) return (
     <div style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", textAlign: "center", paddingTop: "20px" }}>Queue is empty</div>
@@ -99,7 +119,7 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
       {queue.map((song, i) => (
         <div key={`${song.id}-${i}`} ref={el => itemRefs.current[i] = el}
           draggable onDragStart={() => onDragStart(i)} onDragOver={(e) => onDragOver(e, i)}
-          onDrop={() => onDrop(i)} onDragEnd={() => { setDraggingIndex(null); setDragOverIndex(null); }}
+          onDrop={() => onDrop(i)} onDragEnd={onDragEnd}
           style={{
             display: "flex", alignItems: "center", gap: "8px", padding: "8px",
             borderRadius: "10px", marginBottom: "4px",
@@ -107,12 +127,9 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
             opacity: draggingIndex === i ? 0.4 : 1,
             transition: "background 0.15s", userSelect: "none",
           }}>
-          {/* Drag handle - touch events only here */}
-          <div
-            onTouchStart={(e) => onHandleTouchStart(e, i)}
-            onTouchMove={onHandleTouchMove}
-            onTouchEnd={onHandleTouchEnd}
-            style={{ width: "18px", height: "18px", color: "rgba(255,255,255,0.3)", flexShrink: 0, cursor: "grab", touchAction: "none" }}>
+          {/* Drag handle — touch events attached via useEffect above */}
+          <div id={`drag-handle-${i}`}
+            style={{ width: "20px", height: "20px", color: "rgba(255,255,255,0.35)", flexShrink: 0, cursor: "grab", touchAction: "none" }}>
             <Icons.DragHandle />
           </div>
           {/* Click to play */}
@@ -125,7 +142,7 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
             </div>
           </div>
           <button onClick={() => removeFromQueue(i)}
-            style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "24px", height: "24px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "26px", height: "26px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Icons.Remove />
           </button>
         </div>
@@ -160,11 +177,7 @@ export default function Player() {
     nextSong, prevSong, removeFromQueue, moveQueueItem, playFromQueue,
   } = usePlayerStore();
 
-  const ytPlayerRef = useRef(null);
-  const isPlayerReady = useRef(false);
   const intervalRef = useRef(null);
-  const lastSongIdRef = useRef(null);
-  const playerBarRef = useRef(null);
   const [navHeight, setNavHeight] = useState(65);
   const [showFullScreen, setShowFullScreen] = useState(false);
   const [seeking, setSeeking] = useState(false);
@@ -173,25 +186,24 @@ export default function Player() {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
 
-  // Measure nav height dynamically
   useEffect(() => {
-    const measureNav = () => {
+    const measure = () => {
       const nav = document.getElementById("bottom-nav");
       if (nav) setNavHeight(nav.offsetHeight);
     };
-    measureNav();
-    window.addEventListener("resize", measureNav);
-    return () => window.removeEventListener("resize", measureNav);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
   }, []);
 
   useEffect(() => {
-    const handleResize = () => {
+    const handle = () => {
       setIsMobile(window.innerWidth <= 768);
       setIsLandscape(window.innerWidth > window.innerHeight);
     };
-    window.addEventListener("resize", handleResize);
-    window.addEventListener("orientationchange", () => setTimeout(handleResize, 150));
-    return () => window.removeEventListener("resize", handleResize);
+    window.addEventListener("resize", handle);
+    window.addEventListener("orientationchange", () => setTimeout(handle, 150));
+    return () => window.removeEventListener("resize", handle);
   }, []);
 
   // Init YT player ONCE
@@ -209,24 +221,23 @@ export default function Player() {
         events: {
           onReady: (e) => {
             e.target.setVolume(usePlayerStore.getState().volume * 100);
-            isPlayerReady.current = true;
             window._ytPlayer = e.target;
-            // If a song was queued before player was ready, load it now
+            // Load any pending song
             const song = usePlayerStore.getState().currentSong;
             if (song) e.target.loadVideoById(song.id);
           },
           onStateChange: (e) => {
-            const YT = window.YT.PlayerState;
-            if (e.data === YT.PLAYING) {
-              setIsPlaying(true);
-              setDuration(e.target.getDuration());
+            const S = window.YT.PlayerState;
+            if (e.data === S.PLAYING) {
+              usePlayerStore.getState().setIsPlaying(true);
+              usePlayerStore.getState().setDuration(e.target.getDuration());
               clearInterval(intervalRef.current);
               intervalRef.current = setInterval(() => {
-                if (ytPlayerRef.current?.getCurrentTime) {
-                  setProgress(ytPlayerRef.current.getCurrentTime());
+                if (window._ytPlayer?.getCurrentTime) {
+                  usePlayerStore.getState().setProgress(window._ytPlayer.getCurrentTime());
                 }
               }, 500);
-              // MediaSession for lock screen
+              // MediaSession
               const song = usePlayerStore.getState().currentSong;
               if ("mediaSession" in navigator && song) {
                 navigator.mediaSession.metadata = new MediaMetadata({
@@ -234,56 +245,29 @@ export default function Player() {
                   artwork: [{ src: song.thumbnail, sizes: "480x360", type: "image/jpeg" }],
                 });
                 navigator.mediaSession.playbackState = "playing";
-                navigator.mediaSession.setActionHandler("play", () => usePlayerStore.getState().togglePlay());
-                navigator.mediaSession.setActionHandler("pause", () => usePlayerStore.getState().togglePlay());
+                navigator.mediaSession.setActionHandler("play", () => { window._ytPlayer?.playVideo(); usePlayerStore.getState().setIsPlaying(true); });
+                navigator.mediaSession.setActionHandler("pause", () => { window._ytPlayer?.pauseVideo(); usePlayerStore.getState().setIsPlaying(false); });
                 navigator.mediaSession.setActionHandler("nexttrack", () => usePlayerStore.getState().nextSong());
                 navigator.mediaSession.setActionHandler("previoustrack", () => usePlayerStore.getState().prevSong());
               }
-            } else if (e.data === YT.PAUSED) {
-              setIsPlaying(false);
+            } else if (e.data === S.PAUSED) {
+              usePlayerStore.getState().setIsPlaying(false);
               clearInterval(intervalRef.current);
               if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
-            } else if (e.data === YT.ENDED) {
+            } else if (e.data === S.ENDED) {
               clearInterval(intervalRef.current);
               usePlayerStore.getState().nextSong();
             }
           },
         },
       });
-      ytPlayerRef.current = player;
       window._ytPlayer = player;
     });
     return () => clearInterval(intervalRef.current);
   }, []);
 
-  // Load new song when currentSong changes
-  useEffect(() => {
-    if (!currentSong) return;
-    if (lastSongIdRef.current === currentSong.id) return;
-    lastSongIdRef.current = currentSong.id;
-
-    const tryLoad = () => {
-      if (isPlayerReady.current && ytPlayerRef.current?.loadVideoById) {
-        ytPlayerRef.current.loadVideoById(currentSong.id);
-        setProgress(0);
-      } else {
-        setTimeout(tryLoad, 200);
-      }
-    };
-    tryLoad();
-  }, [currentSong?.id]);
-
-  // ONLY pause from this effect — play is handled by loadVideoById + autoplay
-  useEffect(() => {
-    if (!ytPlayerRef.current || !isPlayerReady.current) return;
-    if (!isPlaying) {
-      ytPlayerRef.current.pauseVideo?.();
-    } else {
-      ytPlayerRef.current.playVideo?.();
-    }
-  }, [isPlaying]);
-
-  useEffect(() => { ytPlayerRef.current?.setVolume?.(volume * 100); }, [volume]);
+  // NO isPlaying sync effect — store calls _ytPlayer directly now
+  // NO currentSong effect — playSong() in store calls _ytPlayer directly now
 
   if (!currentSong) return null;
 
@@ -292,7 +276,7 @@ export default function Player() {
   const handleSeekEnd = (e) => {
     const val = parseFloat(e.target.value);
     setSeeking(false);
-    ytPlayerRef.current?.seekTo?.(val, true);
+    window._ytPlayer?.seekTo?.(val, true);
     setProgress(val);
   };
 
@@ -303,19 +287,15 @@ export default function Player() {
 
   const isWide = !isMobile || isLandscape;
 
-  // ── Full Screen Player ─────────────────────────────────────
   const FullScreenPlayer = () => (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, overflow: "hidden" }}>
-      {/* Blurred bg */}
       <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${currentSong.thumbnail})`, backgroundSize: "cover", backgroundPosition: "center", filter: "blur(60px) brightness(0.25) saturate(1.5)", transform: "scale(1.2)" }} />
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.7))" }} />
 
       <div style={{ position: "relative", zIndex: 1, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "env(safe-area-inset-top, 16px) 20px 8px", paddingTop: "max(env(safe-area-inset-top), 16px)" }}>
-          <button onClick={() => setShowFullScreen(false)} style={{ ...btn("white"), width: "36px", height: "36px" }}>
-            <Icons.ChevronDown />
-          </button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 8px" }}>
+          <button onClick={() => setShowFullScreen(false)} style={{ ...btn("white"), width: "36px", height: "36px" }}><Icons.ChevronDown /></button>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px" }}>Now Playing</div>
             <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.8)", fontWeight: 600, marginTop: "2px" }}>{currentSong.artist}</div>
@@ -326,29 +306,20 @@ export default function Player() {
         {/* Content */}
         <div style={{ flex: 1, display: "flex", flexDirection: isWide ? "row" : "column", gap: isWide ? "24px" : 0, padding: isWide ? "8px 28px 20px" : "0 24px 16px", overflow: "hidden", minHeight: 0 }}>
 
-          {/* Player side */}
+          {/* Player panel */}
           <div style={{ flex: isWide ? "0 0 calc(50% - 12px)" : "none", display: "flex", flexDirection: "column", justifyContent: "center", overflow: isWide ? "visible" : "auto", minHeight: 0 }}>
-            {/* Art */}
             <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
-              <img src={currentSong.thumbnail} alt="" style={{
-                width: isWide ? "min(200px, 28vw)" : "min(220px, 58vw)",
-                height: isWide ? "min(200px, 28vw)" : "min(220px, 58vw)",
-                borderRadius: "16px", objectFit: "cover", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", flexShrink: 0,
-              }} />
+              <img src={currentSong.thumbnail} alt="" style={{ width: isWide ? "min(200px, 28vw)" : "min(220px, 58vw)", height: isWide ? "min(200px, 28vw)" : "min(220px, 58vw)", borderRadius: "16px", objectFit: "cover", boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }} />
             </div>
 
-            {/* Title */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: isWide ? "17px" : "20px", fontWeight: 700, color: "white", marginBottom: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.title}</div>
                 <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)" }}>{currentSong.artist}</div>
               </div>
-              <button style={{ ...btn("rgba(255,255,255,0.5)"), width: "36px", height: "36px", marginLeft: "8px", flexShrink: 0 }}>
-                <Icons.Heart filled={false} />
-              </button>
+              <button style={{ ...btn("rgba(255,255,255,0.5)"), width: "36px", height: "36px", marginLeft: "8px" }}><Icons.Heart filled={false} /></button>
             </div>
 
-            {/* Progress */}
             <div style={{ marginBottom: "6px" }}>
               <ProgressBar progress={progress} duration={duration} seeking={seeking} seekValue={seekValue}
                 onSeekStart={handleSeekStart} onSeekChange={handleSeekChange} onSeekEnd={handleSeekEnd} />
@@ -358,7 +329,6 @@ export default function Player() {
               </div>
             </div>
 
-            {/* Controls */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", marginBottom: "12px" }}>
               <button onClick={prevSong} style={{ ...btn("white"), width: "40px", height: "40px" }}><Icons.Prev /></button>
               <button onClick={togglePlay} style={{ background: "white", border: "none", color: "black", borderRadius: "50%", width: "60px", height: "60px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 24px rgba(255,255,255,0.2)", padding: "17px" }}>
@@ -367,7 +337,6 @@ export default function Player() {
               <button onClick={nextSong} style={{ ...btn("white"), width: "40px", height: "40px" }}><Icons.Next /></button>
             </div>
 
-            {/* Shuffle + Volume + Repeat */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
               <button onClick={toggleShuffle} style={{ ...btn(shuffle ? "var(--accent)" : "rgba(255,255,255,0.5)"), width: "34px", height: "34px" }}><Icons.Shuffle /></button>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, margin: "0 10px" }}>
@@ -383,7 +352,7 @@ export default function Player() {
               <button onClick={toggleRepeat} style={{ ...btn(repeat !== "none" ? "var(--accent)" : "rgba(255,255,255,0.5)"), width: "34px", height: "34px" }}><Icons.Repeat mode={repeat} /></button>
             </div>
 
-            {/* Up Next toggle — portrait only */}
+            {/* Up Next toggle portrait */}
             {!isWide && (
               <button onClick={() => setShowQueue(!showQueue)}
                 style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "20px", padding: "8px 20px", cursor: "pointer", fontSize: "13px", fontWeight: 600, width: "100%" }}>
@@ -394,7 +363,7 @@ export default function Player() {
             )}
           </div>
 
-          {/* Queue side */}
+          {/* Queue panel */}
           {(isWide || showQueue) && (
             <div style={{
               flex: isWide ? "0 0 calc(50% - 12px)" : "none",
@@ -408,6 +377,7 @@ export default function Player() {
               <div style={{ fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px", flexShrink: 0 }}>
                 Up Next ({queue.length})
               </div>
+              {/* Scrollable container */}
               <div style={{ overflowY: "auto", flex: 1, WebkitOverflowScrolling: "touch" }}>
                 <DraggableQueue queue={queue} removeFromQueue={removeFromQueue} moveQueueItem={moveQueueItem} playFromQueue={playFromQueue} />
               </div>
@@ -418,16 +388,13 @@ export default function Player() {
     </div>
   );
 
-  // ── Mini Player ───────────────────────────────────────────
   return (
     <>
-      <div ref={playerBarRef} style={{
-        background: "var(--bg-secondary)",
-        borderTop: "1px solid var(--border)",
+      <div style={{
+        background: "var(--bg-secondary)", borderTop: "1px solid var(--border)",
         position: isMobile ? "fixed" : "relative",
         bottom: isMobile ? `${navHeight}px` : "auto",
-        left: 0, right: 0, zIndex: 49,
-        boxSizing: "border-box", width: "100%",
+        left: 0, right: 0, zIndex: 49, boxSizing: "border-box", width: "100%",
       }}>
         {/* Progress line */}
         <div style={{ height: "3px", background: "var(--border)", position: "relative", overflow: "hidden" }}>
@@ -439,8 +406,7 @@ export default function Player() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px" }}>
-          <div onClick={() => setShowFullScreen(true)}
-            style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: 0, cursor: "pointer" }}>
+          <div onClick={() => setShowFullScreen(true)} style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: 0, cursor: "pointer" }}>
             <div style={{ position: "relative", flexShrink: 0 }}>
               <img src={currentSong.thumbnail} alt="" style={{ width: "42px", height: "42px", borderRadius: "8px", objectFit: "cover", display: "block" }} />
               {isPlaying && (
@@ -477,10 +443,7 @@ export default function Player() {
       </div>
 
       {showFullScreen && <FullScreenPlayer />}
-
-      <style>{`
-        @keyframes songbounce { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }
-      `}</style>
+      <style>{`@keyframes songbounce { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }`}</style>
     </>
   );
 }
