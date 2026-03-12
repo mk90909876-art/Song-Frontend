@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "../store/playerStore";
 
 const formatTime = (s) => {
@@ -45,107 +45,119 @@ const loadYTApi = () => {
   });
 };
 
-// ── Draggable Queue ───────────────────────────────────────────
+// ── Draggable Queue (long-press to reorder, tap to play, free scroll) ──
 const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }) => {
   const [draggingIdx, setDraggingIdx] = useState(null);
   const [overIdx, setOverIdx] = useState(null);
+  const [liftedIdx, setLiftedIdx] = useState(null);
   const rowRefs = useRef([]);
-  const drag = useRef({ active: false, index: null, startY: 0, scrollEl: null });
   const containerRef = useRef(null);
+  const drag = useRef({ active: false, index: null, startY: 0, holdTimer: null });
 
-  // Stable touch handlers via useCallback to avoid re-attaching
-  const attachTouch = useCallback((el, i) => {
-    if (!el || el._touchBound) return;
-    el._touchBound = true;
+  const cancelDrag = () => {
+    clearTimeout(drag.current.holdTimer);
+    drag.current = { active: false, index: null, startY: 0, holdTimer: null };
+    setDraggingIdx(null);
+    setOverIdx(null);
+    setLiftedIdx(null);
+  };
 
-    const onStart = (e) => {
-      drag.current = {
-        active: false,
-        index: i,
-        startY: e.touches[0].clientY,
-        scrollEl: containerRef.current,
-      };
-    };
+  const getOverIndex = (touchY) => {
+    for (let j = 0; j < rowRefs.current.length; j++) {
+      const rect = rowRefs.current[j]?.getBoundingClientRect();
+      if (rect && touchY >= rect.top && touchY <= rect.bottom) return j;
+    }
+    return null;
+  };
 
-    const onMove = (e) => {
-      const { index, startY, scrollEl } = drag.current;
-      if (index === null) return;
-      const dy = e.touches[0].clientY - startY;
-      if (!drag.current.active && Math.abs(dy) > 8) {
-        drag.current.active = true;
-      }
-      if (!drag.current.active) return;
-      e.preventDefault();
-      e.stopPropagation();
+  const onTouchStart = (e, i) => {
+    drag.current.index = i;
+    drag.current.startY = e.touches[0].clientY;
+    drag.current.active = false;
+    // 400ms hold → enter drag mode
+    drag.current.holdTimer = setTimeout(() => {
+      drag.current.active = true;
+      setDraggingIdx(i);
+      setLiftedIdx(i);
+    }, 400);
+  };
 
-      setDraggingIdx(index);
-      const touchY = e.touches[0].clientY;
-      for (let j = 0; j < rowRefs.current.length; j++) {
-        const rect = rowRefs.current[j]?.getBoundingClientRect();
-        if (rect && touchY >= rect.top && touchY <= rect.bottom) {
-          setOverIdx(j);
-          break;
-        }
-      }
-    };
+  const onTouchMove = (e) => {
+    const { active, index, startY } = drag.current;
+    const dy = Math.abs(e.touches[0].clientY - startY);
+    // Moved before hold fired → cancel drag, allow scroll
+    if (!active && dy > 8) { clearTimeout(drag.current.holdTimer); drag.current.index = null; return; }
+    if (!active) return;
+    e.preventDefault();
+    const over = getOverIndex(e.touches[0].clientY);
+    if (over !== null) setOverIdx(over);
+  };
 
-    const onEnd = () => {
-      const { active, index } = drag.current;
-      const over = overIdx;
-      if (active && index !== null && over !== null && index !== over) {
-        moveQueueItem(index, over);
-      }
-      drag.current = { active: false, index: null, startY: 0, scrollEl: null };
-      setDraggingIdx(null);
-      setOverIdx(null);
-    };
+  const onTouchEnd = (e) => {
+    const { active, index } = drag.current;
+    const over = overIdx;
+    if (!active) {
+      // Short tap — play
+      if (index !== null) playFromQueue(index);
+    } else if (index !== null && over !== null && index !== over) {
+      moveQueueItem(index, over);
+    }
+    cancelDrag();
+  };
 
-    el.addEventListener("touchstart", onStart, { passive: true });
-    el.addEventListener("touchmove", onMove, { passive: false });
-    el.addEventListener("touchend", onEnd, { passive: true });
-  }, [overIdx, moveQueueItem]);
+  // Desktop drag
+  const onDragStart = (i) => setDraggingIdx(i);
+  const onDragOver = (e, i) => { e.preventDefault(); setOverIdx(i); };
+  const onDrop = (i) => { if (draggingIdx !== null && draggingIdx !== i) moveQueueItem(draggingIdx, i); setDraggingIdx(null); setOverIdx(null); };
 
   if (queue.length === 0) return (
     <div style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", textAlign: "center", padding: "24px 0" }}>Queue is empty</div>
   );
 
   return (
-    <div ref={containerRef} style={{ overflowY: "auto", height: "100%", WebkitOverflowScrolling: "touch" }}>
-      {queue.map((song, i) => (
-        <div
-          key={`${song.id}-${i}`}
-          ref={el => { rowRefs.current[i] = el; }}
-          draggable
-          onDragStart={() => setDraggingIdx(i)}
-          onDragOver={e => { e.preventDefault(); setOverIdx(i); }}
-          onDrop={() => { if (draggingIdx !== null && draggingIdx !== i) moveQueueItem(draggingIdx, i); setDraggingIdx(null); setOverIdx(null); }}
-          onDragEnd={() => { setDraggingIdx(null); setOverIdx(null); }}
-          style={{
-            display: "flex", alignItems: "center", gap: "8px",
-            padding: "8px", borderRadius: "10px", marginBottom: "4px",
-            background: overIdx === i ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)",
-            opacity: draggingIdx === i ? 0.4 : 1,
-            transition: "background 0.1s", userSelect: "none",
-          }}>
-          {/* Touch drag handle */}
+    <div ref={containerRef} style={{ overflowY: "auto", flex: 1, WebkitOverflowScrolling: "touch" }}>
+      {queue.map((song, i) => {
+        const isLifted = liftedIdx === i;
+        const isOver = overIdx === i && draggingIdx !== i;
+        return (
           <div
-            ref={el => attachTouch(el, i)}
-            style={{ width: "20px", height: "20px", color: "rgba(255,255,255,0.3)", flexShrink: 0, cursor: "grab", touchAction: "none" }}>
-            <Icons.DragHandle />
-          </div>
-          {/* Song info */}
-          <div onClick={() => playFromQueue(i)} style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0, cursor: "pointer" }}>
-            <img src={song.thumbnail} alt="" style={{ width: "38px", height: "38px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: "13px", fontWeight: 600, color: "white", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(song.title, 30)}</div>
-              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(song.artist, 26)}</div>
+            key={`${song.id}-${i}`}
+            ref={el => { rowRefs.current[i] = el; }}
+            draggable
+            onDragStart={() => onDragStart(i)}
+            onDragOver={e => onDragOver(e, i)}
+            onDrop={() => onDrop(i)}
+            onDragEnd={() => { setDraggingIdx(null); setOverIdx(null); }}
+            onTouchStart={e => onTouchStart(e, i)}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onTouchCancel={cancelDrag}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "8px", borderRadius: "10px", marginBottom: "4px",
+              background: isOver ? "rgba(255,255,255,0.2)" : isLifted ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.05)",
+              opacity: draggingIdx === i && !isLifted ? 0.3 : 1,
+              transform: isLifted ? "scale(1.02)" : "scale(1)",
+              boxShadow: isLifted ? "0 8px 24px rgba(0,0,0,0.5)" : "none",
+              transition: "background 0.1s, transform 0.15s, box-shadow 0.15s",
+              userSelect: "none",
+            }}>
+            <div style={{ width: "20px", height: "20px", flexShrink: 0, color: isLifted ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.2)", transition: "color 0.2s" }}>
+              <Icons.DragHandle />
             </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
+              <img src={song.thumbnail} alt="" style={{ width: "38px", height: "38px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: "white", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(song.title, 30)}</div>
+                <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(song.artist, 26)}</div>
+              </div>
+            </div>
+            <button onClick={e => { e.stopPropagation(); removeFromQueue(i); }} style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "26px", height: "26px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Icons.Remove />
+            </button>
           </div>
-          <button onClick={() => removeFromQueue(i)} style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "26px", height: "26px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Icons.Remove />
-          </button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
