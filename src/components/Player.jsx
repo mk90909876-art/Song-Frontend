@@ -16,25 +16,31 @@ const ScrollingText = ({ text, style = {} }) => {
   const [dur, setDur] = useState(8);
 
   useEffect(() => {
-    const container = containerRef.current;
-    const textEl = textRef.current;
-    if (!container || !textEl) return;
-    const overflowing = textEl.scrollWidth > container.clientWidth + 2;
-    setShouldScroll(overflowing);
-    if (overflowing) setDur(Math.max(4, textEl.scrollWidth / 55));
+    const timer = setTimeout(() => {
+      const container = containerRef.current;
+      const textEl = textRef.current;
+      if (!container || !textEl) return;
+      const overflowing = textEl.offsetWidth > container.offsetWidth;
+      setShouldScroll(overflowing);
+      if (overflowing) {
+        const shift = textEl.offsetWidth + 60; // text width + gap
+        setDur(Math.max(4, shift / 55));
+        containerRef.current.style.setProperty("--marquee-shift", `-${shift}px`);
+      }
+    }, 150);
+    return () => clearTimeout(timer);
   }, [text]);
 
   return (
     <div ref={containerRef} style={{ overflow: "hidden", whiteSpace: "nowrap", ...style }}>
-      {shouldScroll ? (
-        // Duplicate text side by side so loop is seamless
-        <span style={{ display: "inline-block", animation: `marquee ${dur}s linear infinite`, whiteSpace: "nowrap" }}>
-          <span ref={textRef}>{text}</span>
-          <span style={{ paddingLeft: "60px" }}>{text}</span>
-        </span>
-      ) : (
+      <span style={{
+        display: "inline-block",
+        whiteSpace: "nowrap",
+        animation: shouldScroll ? `marquee ${dur}s linear infinite` : "none",
+      }}>
         <span ref={textRef}>{text}</span>
-      )}
+        {shouldScroll && <span style={{ paddingLeft: "60px" }}>{text}</span>}
+      </span>
     </div>
   );
 };
@@ -489,7 +495,7 @@ export default function Player() {
       {showFullScreen && <FullScreenPlayer />}
       <style>{`
         @keyframes songbounce { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }
-        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(var(--marquee-shift, -50%)); } }
       `}</style>
     </>
   );
