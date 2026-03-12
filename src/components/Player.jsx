@@ -153,9 +153,9 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
             <div style={{ width: "20px", height: "20px", flexShrink: 0, color: isLifted ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.2)", transition: "color 0.2s" }}>
               <Icons.DragHandle />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0, overflow: "hidden" }}>
               <img src={song.thumbnail} alt="" style={{ width: "38px", height: "38px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
-              <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
                 <ScrollingText text={song.title} style={{ fontSize: "13px", fontWeight: 600, color: "white" }} />
                 <ScrollingText text={song.artist} style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "2px" }} />
               </div>
@@ -360,7 +360,7 @@ export default function Player() {
 
       {/* ── Full Screen Player ── */}
       {showFullScreen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 100, overflow: "hidden" }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, overflow: "hidden" }}>
           {/* Blurred background */}
           <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${currentSong.thumbnail})`, backgroundSize: "cover", backgroundPosition: "center", filter: "blur(60px) brightness(0.25) saturate(1.5)", transform: "scale(1.2)" }} />
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.7))" }} />
@@ -379,6 +379,7 @@ export default function Player() {
             {/* Body — side by side on wide, stacked on mobile portrait */}
             <div style={{
               flex: 1, minHeight: 0,
+              width: "100%",
               display: "flex",
               flexDirection: isWide ? "row" : "column",
               overflow: "hidden",
