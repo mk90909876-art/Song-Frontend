@@ -7,7 +7,37 @@ const formatTime = (s) => {
   const sec = Math.floor(s % 60);
   return `${m}:${sec.toString().padStart(2, "0")}`;
 };
-const truncate = (str, n = 35) => str?.length > n ? str.slice(0, n).trimEnd() + "…" : str;
+
+// Scrolls text if it overflows, otherwise static — seamless loop
+const ScrollingText = ({ text, style = {} }) => {
+  const containerRef = useRef(null);
+  const textRef = useRef(null);
+  const [shouldScroll, setShouldScroll] = useState(false);
+  const [dur, setDur] = useState(8);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const textEl = textRef.current;
+    if (!container || !textEl) return;
+    const overflowing = textEl.scrollWidth > container.clientWidth + 2;
+    setShouldScroll(overflowing);
+    if (overflowing) setDur(Math.max(4, textEl.scrollWidth / 55));
+  }, [text]);
+
+  return (
+    <div ref={containerRef} style={{ overflow: "hidden", whiteSpace: "nowrap", ...style }}>
+      {shouldScroll ? (
+        // Duplicate text side by side so loop is seamless
+        <span style={{ display: "inline-block", animation: `marquee ${dur}s linear infinite`, whiteSpace: "nowrap" }}>
+          <span ref={textRef}>{text}</span>
+          <span style={{ paddingLeft: "60px" }}>{text}</span>
+        </span>
+      ) : (
+        <span ref={textRef}>{text}</span>
+      )}
+    </div>
+  );
+};
 
 const Icons = {
   Play: () => (<svg viewBox="0 0 24 24" fill="currentColor" width="100%" height="100%"><polygon points="5,3 19,12 5,21"/></svg>),
@@ -52,60 +82,54 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
   const [liftedIdx, setLiftedIdx] = useState(null);
   const rowRefs = useRef([]);
   const containerRef = useRef(null);
-  const drag = useRef({ active: false, index: null, startY: 0, holdTimer: null });
+  const state = useRef({ active: false, index: null, startY: 0, holdTimer: null, overIdx: null });
 
-  const cancelDrag = () => {
-    clearTimeout(drag.current.holdTimer);
-    drag.current = { active: false, index: null, startY: 0, holdTimer: null };
-    setDraggingIdx(null);
-    setOverIdx(null);
-    setLiftedIdx(null);
-  };
-
-  const getOverIndex = (touchY) => {
-    for (let j = 0; j < rowRefs.current.length; j++) {
-      const rect = rowRefs.current[j]?.getBoundingClientRect();
-      if (rect && touchY >= rect.top && touchY <= rect.bottom) return j;
-    }
-    return null;
-  };
+  // MUST be imperative — React onTouchMove is passive so preventDefault won't work
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onMove = (e) => {
+      if (!state.current.active) {
+        const dy = Math.abs(e.touches[0].clientY - state.current.startY);
+        if (dy > 8) { clearTimeout(state.current.holdTimer); state.current.index = null; }
+        return;
+      }
+      e.preventDefault(); // only works with { passive: false }
+      const touchY = e.touches[0].clientY;
+      for (let j = 0; j < rowRefs.current.length; j++) {
+        const rect = rowRefs.current[j]?.getBoundingClientRect();
+        if (rect && touchY >= rect.top && touchY <= rect.bottom) {
+          state.current.overIdx = j;
+          setOverIdx(j);
+          break;
+        }
+      }
+    };
+    container.addEventListener("touchmove", onMove, { passive: false });
+    return () => container.removeEventListener("touchmove", onMove);
+  }, [queue.length]);
 
   const onTouchStart = (e, i) => {
-    drag.current.index = i;
-    drag.current.startY = e.touches[0].clientY;
-    drag.current.active = false;
-    // 400ms hold → enter drag mode
-    drag.current.holdTimer = setTimeout(() => {
-      drag.current.active = true;
+    state.current = { active: false, index: i, startY: e.touches[0].clientY, holdTimer: null, overIdx: null };
+    state.current.holdTimer = setTimeout(() => {
+      state.current.active = true;
       setDraggingIdx(i);
       setLiftedIdx(i);
     }, 400);
   };
 
-  const onTouchMove = (e) => {
-    const { active, index, startY } = drag.current;
-    const dy = Math.abs(e.touches[0].clientY - startY);
-    // Moved before hold fired → cancel drag, allow scroll
-    if (!active && dy > 8) { clearTimeout(drag.current.holdTimer); drag.current.index = null; return; }
-    if (!active) return;
-    e.preventDefault();
-    const over = getOverIndex(e.touches[0].clientY);
-    if (over !== null) setOverIdx(over);
-  };
-
-  const onTouchEnd = (e) => {
-    const { active, index } = drag.current;
-    const over = overIdx;
+  const onTouchEnd = () => {
+    clearTimeout(state.current.holdTimer);
+    const { active, index, overIdx: over } = state.current;
     if (!active) {
-      // Short tap — play
       if (index !== null) playFromQueue(index);
     } else if (index !== null && over !== null && index !== over) {
       moveQueueItem(index, over);
     }
-    cancelDrag();
+    state.current = { active: false, index: null, startY: 0, holdTimer: null, overIdx: null };
+    setDraggingIdx(null); setOverIdx(null); setLiftedIdx(null);
   };
 
-  // Desktop drag
   const onDragStart = (i) => setDraggingIdx(i);
   const onDragOver = (e, i) => { e.preventDefault(); setOverIdx(i); };
   const onDrop = (i) => { if (draggingIdx !== null && draggingIdx !== i) moveQueueItem(draggingIdx, i); setDraggingIdx(null); setOverIdx(null); };
@@ -120,21 +144,13 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
         const isLifted = liftedIdx === i;
         const isOver = overIdx === i && draggingIdx !== i;
         return (
-          <div
-            key={`${song.id}-${i}`}
-            ref={el => { rowRefs.current[i] = el; }}
-            draggable
-            onDragStart={() => onDragStart(i)}
-            onDragOver={e => onDragOver(e, i)}
-            onDrop={() => onDrop(i)}
-            onDragEnd={() => { setDraggingIdx(null); setOverIdx(null); }}
-            onTouchStart={e => onTouchStart(e, i)}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
-            onTouchCancel={cancelDrag}
+          <div key={`${song.id}-${i}`} ref={el => { rowRefs.current[i] = el; }}
+            draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)}
+            onDrop={() => onDrop(i)} onDragEnd={() => { setDraggingIdx(null); setOverIdx(null); }}
+            onTouchStart={e => onTouchStart(e, i)} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
             style={{
-              display: "flex", alignItems: "center", gap: "8px",
-              padding: "8px", borderRadius: "10px", marginBottom: "4px",
+              display: "flex", alignItems: "center", gap: "8px", padding: "8px",
+              borderRadius: "10px", marginBottom: "4px",
               background: isOver ? "rgba(255,255,255,0.2)" : isLifted ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.05)",
               opacity: draggingIdx === i && !isLifted ? 0.3 : 1,
               transform: isLifted ? "scale(1.02)" : "scale(1)",
@@ -148,11 +164,12 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
               <img src={song.thumbnail} alt="" style={{ width: "38px", height: "38px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: "white", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(song.title, 30)}</div>
-                <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(song.artist, 26)}</div>
+                <ScrollingText text={song.title} style={{ fontSize: "13px", fontWeight: 600, color: "white" }} />
+                <ScrollingText text={song.artist} style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "2px" }} />
               </div>
             </div>
-            <button onClick={e => { e.stopPropagation(); removeFromQueue(i); }} style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "26px", height: "26px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={e => { e.stopPropagation(); removeFromQueue(i); }}
+              style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "26px", height: "26px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Icons.Remove />
             </button>
           </div>
@@ -344,24 +361,24 @@ export default function Player() {
           <button onClick={() => setShowFullScreen(false)} style={{ ...btn("white"), width: "36px", height: "36px" }}><Icons.ChevronDown /></button>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px" }}>Now Playing</div>
-            <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.8)", fontWeight: 600, marginTop: "2px" }}>{truncate(currentSong.artist, 30)}</div>
+            <ScrollingText text={currentSong.artist} style={{ fontSize: "12px", color: "rgba(255,255,255,0.8)", fontWeight: 600, marginTop: "2px", maxWidth: "200px" }} />
           </div>
           <div style={{ width: "36px" }} />
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, display: "flex", flexDirection: isWide ? "row" : "column", gap: isWide ? "24px" : 0, padding: isWide ? "8px 28px 20px" : "0 24px 16px", overflow: "hidden", minHeight: 0 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: isWide ? "row" : "column", gap: isWide ? "0" : 0, padding: isWide ? "8px 0 20px" : "0 24px 16px", overflow: "hidden", minHeight: 0 }}>
 
           {/* Left: Controls */}
-          <div style={{ flex: isWide ? "0 0 calc(50% - 12px)" : "none", display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 0, overflow: isWide ? "visible" : "auto" }}>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
-              <img src={currentSong.thumbnail} alt="" style={{ width: isWide ? "min(200px, 28vw)" : "min(220px, 58vw)", height: isWide ? "min(200px, 28vw)" : "min(220px, 58vw)", borderRadius: "16px", objectFit: "cover", boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }} />
+          <div style={{ flex: isWide ? "0 0 50%" : "none", display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 0, overflow: isWide ? "visible" : "auto", padding: isWide ? "0 32px" : "0" }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: "20px" }}>
+              <img src={currentSong.thumbnail} alt="" style={{ width: isWide ? "min(260px, 32vw)" : "min(240px, 62vw)", height: isWide ? "min(260px, 32vw)" : "min(240px, 62vw)", borderRadius: "16px", objectFit: "cover", boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }} />
             </div>
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: isWide ? "16px" : "18px", fontWeight: 700, color: "white", marginBottom: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.title}</div>
-                <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.artist}</div>
+                <ScrollingText text={currentSong.title} style={{ fontSize: isWide ? "16px" : "18px", fontWeight: 700, color: "white", marginBottom: "3px" }} />
+                <ScrollingText text={currentSong.artist} style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)" }} />
               </div>
             </div>
 
@@ -407,7 +424,7 @@ export default function Player() {
 
           {/* Right: Queue */}
           {(isWide || showQueue) && (
-            <div style={{ flex: isWide ? "0 0 calc(50% - 12px)" : "none", borderLeft: isWide ? "1px solid rgba(255,255,255,0.1)" : "none", paddingLeft: isWide ? "24px" : "0", paddingTop: !isWide ? "12px" : "0", display: "flex", flexDirection: "column", minHeight: 0, maxHeight: isWide ? "100%" : "260px", overflow: "hidden" }}>
+            <div style={{ flex: isWide ? "0 0 50%" : "none", borderLeft: isWide ? "1px solid rgba(255,255,255,0.1)" : "none", padding: isWide ? "0 24px" : "12px 0 0", display: "flex", flexDirection: "column", minHeight: 0, maxHeight: isWide ? "100%" : "260px", overflow: "hidden" }}>
               <div style={{ fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px", flexShrink: 0 }}>
                 Up Next ({queue.length})
               </div>
@@ -445,8 +462,8 @@ export default function Player() {
               )}
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(currentSong.title, 38)}</div>
-              <div style={{ fontSize: "11px", color: "var(--text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(currentSong.artist, 32)}</div>
+              <ScrollingText text={currentSong.title} style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }} />
+              <ScrollingText text={currentSong.artist} style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }} />
             </div>
           </div>
 
@@ -470,7 +487,10 @@ export default function Player() {
       </div>
 
       {showFullScreen && <FullScreenPlayer />}
-      <style>{`@keyframes songbounce { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }`}</style>
+      <style>{`
+        @keyframes songbounce { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }
+        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+      `}</style>
     </>
   );
 }
