@@ -8,7 +8,6 @@ const formatTime = (s) => {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 };
 
-// Scrolls text if it overflows, otherwise static — seamless loop
 const ScrollingText = ({ text, style = {} }) => {
   const containerRef = useRef(null);
   const textRef = useRef(null);
@@ -23,9 +22,9 @@ const ScrollingText = ({ text, style = {} }) => {
       const overflowing = textEl.offsetWidth > container.offsetWidth;
       setShouldScroll(overflowing);
       if (overflowing) {
-        const shift = textEl.offsetWidth + 60; // text width + gap
+        const shift = textEl.offsetWidth + 60;
         setDur(Math.max(4, shift / 55));
-        containerRef.current.style.setProperty("--marquee-shift", `-${shift}px`);
+        container.style.setProperty("--marquee-shift", `-${shift}px`);
       }
     }, 150);
     return () => clearTimeout(timer);
@@ -33,11 +32,7 @@ const ScrollingText = ({ text, style = {} }) => {
 
   return (
     <div ref={containerRef} style={{ overflow: "hidden", whiteSpace: "nowrap", ...style }}>
-      <span style={{
-        display: "inline-block",
-        whiteSpace: "nowrap",
-        animation: shouldScroll ? `marquee ${dur}s linear infinite` : "none",
-      }}>
+      <span style={{ display: "inline-block", whiteSpace: "nowrap", animation: shouldScroll ? `marquee ${dur}s linear infinite` : "none" }}>
         <span ref={textRef}>{text}</span>
         {shouldScroll && <span style={{ paddingLeft: "60px" }}>{text}</span>}
       </span>
@@ -60,7 +55,6 @@ const Icons = {
   Queue: () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="100%" height="100%"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="3" cy="18" r="1" fill="currentColor" stroke="none"/></svg>),
 };
 
-// ── YT API loader ─────────────────────────────────────────────
 let ytApiReady = false;
 let ytApiCallbacks = [];
 const loadYTApi = () => {
@@ -72,16 +66,12 @@ const loadYTApi = () => {
       const tag = document.createElement("script");
       tag.src = "https://www.youtube.com/iframe_api";
       document.head.appendChild(tag);
-      window.onYouTubeIframeAPIReady = () => {
-        ytApiReady = true;
-        ytApiCallbacks.forEach(cb => cb());
-        ytApiCallbacks = [];
-      };
+      window.onYouTubeIframeAPIReady = () => { ytApiReady = true; ytApiCallbacks.forEach(cb => cb()); ytApiCallbacks = []; };
     }
   });
 };
 
-// ── Draggable Queue (long-press to reorder, tap to play, free scroll) ──
+// ── Draggable Queue ───────────────────────────────────────────
 const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }) => {
   const [draggingIdx, setDraggingIdx] = useState(null);
   const [overIdx, setOverIdx] = useState(null);
@@ -90,7 +80,6 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
   const containerRef = useRef(null);
   const state = useRef({ active: false, index: null, startY: 0, holdTimer: null, overIdx: null });
 
-  // MUST be imperative — React onTouchMove is passive so preventDefault won't work
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -100,7 +89,7 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
         if (dy > 8) { clearTimeout(state.current.holdTimer); state.current.index = null; }
         return;
       }
-      e.preventDefault(); // only works with { passive: false }
+      e.preventDefault();
       const touchY = e.touches[0].clientY;
       for (let j = 0; j < rowRefs.current.length; j++) {
         const rect = rowRefs.current[j]?.getBoundingClientRect();
@@ -127,11 +116,8 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
   const onTouchEnd = () => {
     clearTimeout(state.current.holdTimer);
     const { active, index, overIdx: over } = state.current;
-    if (!active) {
-      if (index !== null) playFromQueue(index);
-    } else if (index !== null && over !== null && index !== over) {
-      moveQueueItem(index, over);
-    }
+    if (!active) { if (index !== null) playFromQueue(index); }
+    else if (index !== null && over !== null && index !== over) moveQueueItem(index, over);
     state.current = { active: false, index: null, startY: 0, holdTimer: null, overIdx: null };
     setDraggingIdx(null); setOverIdx(null); setLiftedIdx(null);
   };
@@ -169,7 +155,7 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
               <img src={song.thumbnail} alt="" style={{ width: "38px", height: "38px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <ScrollingText text={song.title} style={{ fontSize: "13px", fontWeight: 600, color: "white" }} />
                 <ScrollingText text={song.artist} style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "2px" }} />
               </div>
@@ -185,7 +171,6 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
   );
 };
 
-// ── Progress Bar ──────────────────────────────────────────────
 const ProgressBar = ({ progress, duration, onSeekStart, onSeekChange, onSeekEnd, seekValue, seeking }) => {
   const pct = duration ? ((seeking ? seekValue : progress) / duration) * 100 : 0;
   return (
@@ -201,7 +186,6 @@ const ProgressBar = ({ progress, duration, onSeekStart, onSeekChange, onSeekEnd,
   );
 };
 
-// ── Main Player ───────────────────────────────────────────────
 export default function Player() {
   const {
     currentSong, isPlaying, queue, shuffle, repeat, volume,
@@ -233,12 +217,10 @@ export default function Player() {
     const handle = () => { setIsMobile(window.innerWidth <= 768); setIsLandscape(window.innerWidth > window.innerHeight); };
     window.addEventListener("resize", handle);
     window.addEventListener("orientationchange", () => setTimeout(handle, 150));
-    return () => window.removeEventListener("resize", handle);
+    return () => { window.removeEventListener("resize", handle); };
   }, []);
 
-  // ── Init two YT players ─────────────────────────────────────
   useEffect(() => {
-    // Create two hidden divs
     ["yt-player-a", "yt-player-b"].forEach(id => {
       if (!document.getElementById(id)) {
         const div = document.createElement("div");
@@ -249,7 +231,6 @@ export default function Player() {
     });
 
     const makeStateHandler = (playerId) => (e) => {
-      // Only handle events from the active player
       if (window._activePlayer !== playerId) return;
       const S = window.YT.PlayerState;
       const player = playerId === "primary" ? window._ytPlayerA : window._ytPlayerB;
@@ -259,18 +240,13 @@ export default function Player() {
         usePlayerStore.getState().setDuration(player.getDuration());
         clearInterval(intervalRef.current);
         intervalRef.current = setInterval(() => {
-          if (player?.getCurrentTime) setProgress(player.getCurrentTime());
+          if (player?.getCurrentTime) usePlayerStore.getState().setProgress(player.getCurrentTime());
         }, 500);
-
-        // Restore progress once after session reload
         if (!restoredRef.current && usePlayerStore.getState().savedProgress > 3) {
           restoredRef.current = true;
           player.seekTo(usePlayerStore.getState().savedProgress, true);
         }
-
-        // Preload next into other player
         setTimeout(() => preloadNext(), 2000);
-
         const song = usePlayerStore.getState().currentSong;
         if ("mediaSession" in navigator && song) {
           navigator.mediaSession.metadata = new MediaMetadata({ title: song.title, artist: song.artist, artwork: [{ src: song.thumbnail, sizes: "480x360", type: "image/jpeg" }] });
@@ -283,7 +259,6 @@ export default function Player() {
       } else if (e.data === S.PAUSED) {
         usePlayerStore.getState().setIsPlaying(false);
         clearInterval(intervalRef.current);
-        if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
       } else if (e.data === S.ENDED) {
         clearInterval(intervalRef.current);
         usePlayerStore.getState().nextSong();
@@ -292,7 +267,6 @@ export default function Player() {
 
     loadYTApi().then(() => {
       window._activePlayer = "primary";
-
       window._ytPlayerA = new window.YT.Player("yt-player-a", {
         width: "1", height: "1",
         playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, iv_load_policy: 3, rel: 0, playsinline: 1 },
@@ -306,40 +280,21 @@ export default function Player() {
           onStateChange: makeStateHandler("primary"),
         },
       });
-
       window._ytPlayerB = new window.YT.Player("yt-player-b", {
         width: "1", height: "1",
         playerVars: { autoplay: 0, controls: 0, disablekb: 1, fs: 0, iv_load_policy: 3, rel: 0, playsinline: 1 },
         events: {
-          onReady: (e) => {
-            window._ytPlayerB = e.target;
-            e.target.setVolume(0); // keep silent until active
-          },
+          onReady: (e) => { window._ytPlayerB = e.target; e.target.setVolume(0); },
           onStateChange: makeStateHandler("secondary"),
         },
       });
     });
-
     return () => clearInterval(intervalRef.current);
   }, []);
-
-  // When active player switches to secondary, set volumes correctly
-  useEffect(() => {
-    if (!window._ytPlayerA || !window._ytPlayerB) return;
-    const vol = usePlayerStore.getState().volume * 100;
-    if (window._activePlayer === "primary") {
-      window._ytPlayerA?.setVolume?.(vol);
-      window._ytPlayerB?.setVolume?.(0);
-    } else {
-      window._ytPlayerB?.setVolume?.(vol);
-      window._ytPlayerA?.setVolume?.(0);
-    }
-  }, [isPlaying]);
 
   if (!currentSong) return null;
 
   const activePlayer = () => window._activePlayer === "primary" ? window._ytPlayerA : window._ytPlayerB;
-
   const handleSeekStart = () => { setSeeking(true); setSeekValue(progress); };
   const handleSeekChange = (e) => setSeekValue(parseFloat(e.target.value));
   const handleSeekEnd = (e) => {
@@ -354,99 +309,13 @@ export default function Player() {
     display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%",
   });
 
+  // Wide = desktop OR landscape phone
   const isWide = !isMobile || isLandscape;
-
-  const FullScreenPlayer = () => (
-    <div style={{ position: "fixed", inset: 0, zIndex: 100, overflow: "hidden" }}>
-      <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${currentSong.thumbnail})`, backgroundSize: "cover", backgroundPosition: "center", filter: "blur(60px) brightness(0.25) saturate(1.5)", transform: "scale(1.2)" }} />
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.7))" }} />
-
-      <div style={{ position: "relative", zIndex: 1, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 8px", flexShrink: 0 }}>
-          <button onClick={() => setShowFullScreen(false)} style={{ ...btn("white"), width: "36px", height: "36px" }}><Icons.ChevronDown /></button>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px" }}>Now Playing</div>
-            <ScrollingText text={currentSong.artist} style={{ fontSize: "12px", color: "rgba(255,255,255,0.8)", fontWeight: 600, marginTop: "2px", maxWidth: "200px" }} />
-          </div>
-          <div style={{ width: "36px" }} />
-        </div>
-
-        {/* Body */}
-        <div style={{ flex: 1, display: "flex", flexDirection: isWide ? "row" : "column", gap: isWide ? "0" : 0, padding: isWide ? "8px 0 20px" : "0 24px 16px", overflow: "hidden", minHeight: 0 }}>
-
-          {/* Left: Controls */}
-          <div style={{ flex: isWide ? "0 0 50%" : "none", display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 0, overflow: isWide ? "visible" : "auto", padding: isWide ? "0 32px" : "0" }}>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: "20px" }}>
-              <img src={currentSong.thumbnail} alt="" style={{ width: isWide ? "min(260px, 32vw)" : "min(240px, 62vw)", height: isWide ? "min(260px, 32vw)" : "min(240px, 62vw)", borderRadius: "16px", objectFit: "cover", boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }} />
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <ScrollingText text={currentSong.title} style={{ fontSize: isWide ? "16px" : "18px", fontWeight: 700, color: "white", marginBottom: "3px" }} />
-                <ScrollingText text={currentSong.artist} style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)" }} />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: "8px" }}>
-              <ProgressBar progress={progress} duration={duration} seeking={seeking} seekValue={seekValue} onSeekStart={handleSeekStart} onSeekChange={handleSeekChange} onSeekEnd={handleSeekEnd} />
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "5px" }}>
-                <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)" }}>{formatTime(seeking ? seekValue : progress)}</span>
-                <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)" }}>{formatTime(duration)}</span>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", marginBottom: "12px" }}>
-              <button onClick={prevSong} style={{ ...btn("white"), width: "40px", height: "40px" }}><Icons.Prev /></button>
-              <button onClick={togglePlay} style={{ background: "white", border: "none", color: "black", borderRadius: "50%", width: "60px", height: "60px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "17px", boxShadow: "0 8px 24px rgba(255,255,255,0.2)" }}>
-                {isPlaying ? <Icons.Pause /> : <Icons.Play />}
-              </button>
-              <button onClick={nextSong} style={{ ...btn("white"), width: "40px", height: "40px" }}><Icons.Next /></button>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-              <button onClick={toggleShuffle} style={{ ...btn(shuffle ? "var(--accent)" : "rgba(255,255,255,0.5)"), width: "34px", height: "34px" }}><Icons.Shuffle /></button>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, margin: "0 10px" }}>
-                <div style={{ width: "18px", height: "18px", color: "rgba(255,255,255,0.5)", flexShrink: 0 }}><Icons.Volume level={volume} /></div>
-                <div style={{ flex: 1, position: "relative" }}>
-                  <div style={{ height: "3px", background: "rgba(255,255,255,0.15)", borderRadius: "2px" }}>
-                    <div style={{ height: "100%", width: `${volume * 100}%`, background: "rgba(255,255,255,0.7)", borderRadius: "2px" }} />
-                  </div>
-                  <input type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))}
-                    style={{ position: "absolute", top: "-8px", left: 0, width: "100%", opacity: 0, cursor: "pointer", height: "20px", margin: 0 }} />
-                </div>
-              </div>
-              <button onClick={toggleRepeat} style={{ ...btn(repeat !== "none" ? "var(--accent)" : "rgba(255,255,255,0.5)"), width: "34px", height: "34px" }}><Icons.Repeat mode={repeat} /></button>
-            </div>
-
-            {!isWide && (
-              <button onClick={() => setShowQueue(!showQueue)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "20px", padding: "8px 20px", cursor: "pointer", fontSize: "13px", fontWeight: 600, width: "100%" }}>
-                <div style={{ width: "16px", height: "16px" }}><Icons.Queue /></div>
-                Up Next {queue.length > 0 && `(${queue.length})`}
-                <div style={{ width: "14px", height: "14px" }}>{showQueue ? <Icons.ChevronDown /> : <Icons.ChevronUp />}</div>
-              </button>
-            )}
-          </div>
-
-          {/* Right: Queue */}
-          {(isWide || showQueue) && (
-            <div style={{ flex: isWide ? "0 0 50%" : "none", borderLeft: isWide ? "1px solid rgba(255,255,255,0.1)" : "none", padding: isWide ? "0 24px" : "12px 0 0", display: "flex", flexDirection: "column", minHeight: 0, maxHeight: isWide ? "100%" : "260px", overflow: "hidden" }}>
-              <div style={{ fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px", flexShrink: 0 }}>
-                Up Next ({queue.length})
-              </div>
-              <DraggableQueue queue={queue} removeFromQueue={removeFromQueue} moveQueueItem={moveQueueItem} playFromQueue={playFromQueue} />
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <>
-      {/* Mini player */}
+      {/* ── Mini Player ── */}
       <div style={{ background: "var(--bg-secondary)", borderTop: "1px solid var(--border)", position: isMobile ? "fixed" : "relative", bottom: isMobile ? `${navHeight}px` : "auto", left: 0, right: 0, zIndex: 49, boxSizing: "border-box", width: "100%" }}>
-        {/* Progress line */}
         <div style={{ height: "3px", background: "var(--border)", position: "relative", overflow: "hidden" }}>
           <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${duration ? (progress / duration) * 100 : 0}%`, background: "var(--accent)", transition: "width 0.5s linear" }} />
           <input type="range" min="0" max={duration || 100} value={seeking ? seekValue : progress}
@@ -454,7 +323,6 @@ export default function Player() {
             onChange={handleSeekChange} onMouseUp={handleSeekEnd} onTouchEnd={handleSeekEnd}
             style={{ position: "absolute", top: "-8px", left: 0, width: "100%", opacity: 0, cursor: "pointer", height: "20px", margin: 0 }} />
         </div>
-
         <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px" }}>
           <div onClick={() => setShowFullScreen(true)} style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: 0, cursor: "pointer" }}>
             <div style={{ position: "relative", flexShrink: 0 }}>
@@ -467,12 +335,11 @@ export default function Player() {
                 </div>
               )}
             </div>
-            <div style={{ minWidth: 0 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <ScrollingText text={currentSong.title} style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }} />
               <ScrollingText text={currentSong.artist} style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }} />
             </div>
           </div>
-
           <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
             {!isMobile && <button onClick={prevSong} style={{ ...btn("var(--text-secondary)"), width: "36px", height: "36px" }}><Icons.Prev /></button>}
             <button onClick={togglePlay} style={{ background: "var(--accent)", border: "none", color: "white", borderRadius: "50%", width: "38px", height: "38px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "10px", flexShrink: 0 }}>
@@ -480,7 +347,6 @@ export default function Player() {
             </button>
             <button onClick={nextSong} style={{ ...btn("var(--text-secondary)"), width: "36px", height: "36px" }}><Icons.Next /></button>
           </div>
-
           {!isMobile && (
             <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
               <div style={{ width: "16px", height: "16px", color: "var(--text-secondary)" }}><Icons.Volume level={volume} /></div>
@@ -492,10 +358,133 @@ export default function Player() {
         </div>
       </div>
 
-      {showFullScreen && <FullScreenPlayer />}
+      {/* ── Full Screen Player ── */}
+      {showFullScreen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, overflow: "hidden" }}>
+          {/* Blurred background */}
+          <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${currentSong.thumbnail})`, backgroundSize: "cover", backgroundPosition: "center", filter: "blur(60px) brightness(0.25) saturate(1.5)", transform: "scale(1.2)" }} />
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.7))" }} />
+
+          <div style={{ position: "relative", zIndex: 1, height: "100%", display: "flex", flexDirection: "column" }}>
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 8px", flexShrink: 0 }}>
+              <button onClick={() => setShowFullScreen(false)} style={{ ...btn("white"), width: "36px", height: "36px" }}><Icons.ChevronDown /></button>
+              <div style={{ textAlign: "center", minWidth: 0, flex: 1, margin: "0 12px" }}>
+                <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px" }}>Now Playing</div>
+                <ScrollingText text={currentSong.artist} style={{ fontSize: "12px", color: "rgba(255,255,255,0.8)", fontWeight: 600, marginTop: "2px" }} />
+              </div>
+              <div style={{ width: "36px", flexShrink: 0 }} />
+            </div>
+
+            {/* Body — side by side on wide, stacked on mobile portrait */}
+            <div style={{
+              flex: 1, minHeight: 0,
+              display: "flex",
+              flexDirection: isWide ? "row" : "column",
+              overflow: "hidden",
+            }}>
+              {/* ── Left: Player controls ── */}
+              <div style={{
+                width: isWide ? "50%" : "100%",
+                flexShrink: 0,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                padding: "12px 36px",
+                overflow: isWide ? "visible" : "auto",
+                boxSizing: "border-box",
+              }}>
+                {/* Album art */}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "20px" }}>
+                  <img src={currentSong.thumbnail} alt=""
+                    style={{
+                      width: isWide ? "min(280px, 34vw)" : "min(240px, 60vw)",
+                      height: isWide ? "min(280px, 34vw)" : "min(240px, 60vw)",
+                      borderRadius: "16px", objectFit: "cover",
+                      boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
+                    }} />
+                </div>
+
+                {/* Title / artist */}
+                <div style={{ marginBottom: "12px" }}>
+                  <ScrollingText text={currentSong.title} style={{ fontSize: isWide ? "17px" : "19px", fontWeight: 700, color: "white", marginBottom: "4px" }} />
+                  <ScrollingText text={currentSong.artist} style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)" }} />
+                </div>
+
+                {/* Progress */}
+                <div style={{ marginBottom: "10px" }}>
+                  <ProgressBar progress={progress} duration={duration} seeking={seeking} seekValue={seekValue} onSeekStart={handleSeekStart} onSeekChange={handleSeekChange} onSeekEnd={handleSeekEnd} />
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "5px" }}>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)" }}>{formatTime(seeking ? seekValue : progress)}</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)" }}>{formatTime(duration)}</span>
+                  </div>
+                </div>
+
+                {/* Controls */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", marginBottom: "14px" }}>
+                  <button onClick={prevSong} style={{ ...btn("white"), width: "40px", height: "40px" }}><Icons.Prev /></button>
+                  <button onClick={togglePlay} style={{ background: "white", border: "none", color: "black", borderRadius: "50%", width: "62px", height: "62px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "17px", boxShadow: "0 8px 24px rgba(255,255,255,0.2)" }}>
+                    {isPlaying ? <Icons.Pause /> : <Icons.Play />}
+                  </button>
+                  <button onClick={nextSong} style={{ ...btn("white"), width: "40px", height: "40px" }}><Icons.Next /></button>
+                </div>
+
+                {/* Shuffle / Volume / Repeat */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                  <button onClick={toggleShuffle} style={{ ...btn(shuffle ? "var(--accent)" : "rgba(255,255,255,0.4)"), width: "32px", height: "32px" }}><Icons.Shuffle /></button>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, margin: "0 12px" }}>
+                    <div style={{ width: "16px", height: "16px", color: "rgba(255,255,255,0.5)", flexShrink: 0 }}><Icons.Volume level={volume} /></div>
+                    <div style={{ flex: 1, position: "relative" }}>
+                      <div style={{ height: "3px", background: "rgba(255,255,255,0.15)", borderRadius: "2px" }}>
+                        <div style={{ height: "100%", width: `${volume * 100}%`, background: "rgba(255,255,255,0.7)", borderRadius: "2px" }} />
+                      </div>
+                      <input type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))}
+                        style={{ position: "absolute", top: "-8px", left: 0, width: "100%", opacity: 0, cursor: "pointer", height: "20px", margin: 0 }} />
+                    </div>
+                  </div>
+                  <button onClick={toggleRepeat} style={{ ...btn(repeat !== "none" ? "var(--accent)" : "rgba(255,255,255,0.4)"), width: "32px", height: "32px" }}><Icons.Repeat mode={repeat} /></button>
+                </div>
+
+                {/* Up Next toggle (mobile portrait only) */}
+                {!isWide && (
+                  <button onClick={() => setShowQueue(!showQueue)}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "20px", padding: "8px 20px", cursor: "pointer", fontSize: "13px", fontWeight: 600, width: "100%" }}>
+                    <div style={{ width: "16px", height: "16px" }}><Icons.Queue /></div>
+                    Up Next {queue.length > 0 && `(${queue.length})`}
+                    <div style={{ width: "14px", height: "14px" }}>{showQueue ? <Icons.ChevronDown /> : <Icons.ChevronUp />}</div>
+                  </button>
+                )}
+              </div>
+
+              {/* ── Right: Queue ── */}
+              {(isWide || showQueue) && (
+                <div style={{
+                  width: isWide ? "50%" : "100%",
+                  flexShrink: 0,
+                  borderLeft: isWide ? "1px solid rgba(255,255,255,0.1)" : "none",
+                  borderTop: !isWide ? "1px solid rgba(255,255,255,0.1)" : "none",
+                  display: "flex",
+                  flexDirection: "column",
+                  minHeight: 0,
+                  maxHeight: isWide ? "100%" : "260px",
+                  padding: isWide ? "16px 24px" : "12px 24px",
+                  boxSizing: "border-box",
+                  overflow: "hidden",
+                }}>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px", flexShrink: 0 }}>
+                    Up Next ({queue.length})
+                  </div>
+                  <DraggableQueue queue={queue} removeFromQueue={removeFromQueue} moveQueueItem={moveQueueItem} playFromQueue={playFromQueue} />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes songbounce { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }
-        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(var(--marquee-shift, -50%)); } }
+        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(var(--marquee-shift, -200px)); } }
       `}</style>
     </>
   );
