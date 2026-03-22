@@ -12,7 +12,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Refresh lock — only one refresh at a time
+// ── Refresh lock — only ONE refresh fires even if many 401s hit at once ──
 let isRefreshing = false;
 let failedQueue = [];
 
@@ -28,22 +28,25 @@ api.interceptors.response.use(
   (res) => res,
   async (err) => {
     const originalRequest = err.config;
+
     if (err.response?.status === 401 && !originalRequest._retry) {
-      const refresh = localStorage.getItem("refresh_token");
-      if (!refresh) {
+      const refreshToken = localStorage.getItem("refresh_token");
+
+      // No refresh token → straight to login
+      if (!refreshToken) {
         localStorage.clear();
         window.location.href = "/login";
         return Promise.reject(err);
       }
 
+      // Another refresh already in flight → queue this request
       if (isRefreshing) {
-        // Queue this request until refresh completes
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         }).then((token) => {
           originalRequest.headers.Authorization = `Bearer ${token}`;
           return api(originalRequest);
-        });
+        }).catch(e => Promise.reject(e));
       }
 
       originalRequest._retry = true;
@@ -52,7 +55,7 @@ api.interceptors.response.use(
       try {
         const { data } = await axios.post(
           `${import.meta.env.VITE_API_URL}/api/auth/refresh`,
-          { refresh_token: refresh }
+          { refresh_token: refreshToken }
         );
         localStorage.setItem("access_token", data.access_token);
         localStorage.setItem("refresh_token", data.refresh_token);
@@ -69,6 +72,7 @@ api.interceptors.response.use(
         isRefreshing = false;
       }
     }
+
     return Promise.reject(err);
   }
 );
