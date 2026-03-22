@@ -33,74 +33,108 @@ const saveSearchHistory = (h) => {
 const session = loadSession();
 
 // ── YouTube channel names that are useless for Saavn search ──
-const CHANNEL_NAMES = [
-  "t-series", "sony music", "zee music", "tips official", "yrf", "eros now",
-  "saregama", "speed records", "rajshri", "shemaroo", "colors tv", "star music",
-  "universal music", "warner music", "atlantic records", "umg", "vevo",
-  "official", "music", "records", "entertainment", "productions",
+// ── Noise words in YouTube titles ────────────────────────────
+const NOISE_WORDS = [
+  "official","video","audio","lyric","lyrics","full","song","music",
+  "hd","4k","8k","visualizer","visualiser","animation","animated",
+  "unplugged","live","acoustic","remix","remaster","remastered",
+  "extended","version","original","promo","teaser","trailer",
+  "making","behind","scenes","bonus","track","new","latest",
+  "2020","2021","2022","2023","2024","2025",
 ];
 
-const isChannelName = (name) => {
-  const n = name.toLowerCase();
-  return CHANNEL_NAMES.some(c => n.includes(c));
+const CHANNEL_NAMES = [
+  "t-series","tseries","sony music","zee music","tips official","tips films",
+  "yrf","eros now","saregama","speed records","rajshri","shemaroo",
+  "colors tv","star music","universal music","warner music","atlantic",
+  "umg","vevo","desi music","crown records","romance rewind",
+  "bollywood lofi","mr jatt","pagalworld","gaana","wynk",
+];
+
+const isNoise = (str) => {
+  const s = str.toLowerCase().trim();
+  if (!s) return true;
+  if (CHANNEL_NAMES.some(c => s.includes(c))) return true;
+  const words = s.split(/\s+/);
+  return words.length > 0 && words.every(w => NOISE_WORDS.includes(w) || /^\d{4}$/.test(w));
 };
 
-// ── Title cleaner ─────────────────────────────────────────────
-// YouTube titles follow patterns like:
-//   "Song Name - Artist | Official Video | Channel"
-//   "Artist - Song Name (Official Video)"
-//   "Song Name (Lyrical) | Movie | Singer | Channel"
+// ── Title cleaner — handles ALL YouTube title patterns ────────
 const cleanForSearch = (ytTitle, ytArtist) => {
-  let title = ytTitle || "";
-  let artist = ytArtist || "";
+  let raw = (ytTitle || "").replace(/@\w+/g, "").trim();
 
-  // Step 1: Remove everything after | (channel info, movie names etc)
-  title = title.split("|")[0].trim();
+  // Remove everything after first |
+  raw = raw.split("|")[0].trim();
 
-  // Step 2: Handle "X - Y" pattern
-  // If title has " - ", figure out which side is song vs artist
-  if (title.includes(" - ")) {
-    const parts = title.split(" - ");
-    const left = parts[0].trim();
-    const right = parts.slice(1).join(" - ").trim();
+  // Remove noise parentheses: (Official Video), (Full Song), (4K HD), etc.
+  raw = raw.replace(/\(([^)]*)\)/gi, (match, inner) => {
+    return NOISE_WORDS.some(n => inner.toLowerCase().includes(n)) ? "" : match;
+  });
 
-    // If right side has spaces (longer), it's likely "Artist - Song Title"
-    // If left side is short and right side is longer, left=artist, right=song
-    if (right.length > left.length && left.split(" ").length <= 3) {
-      // Pattern: "Aditya Rikhari - Paaro" → artist=left, song=right
-      artist = left;
-      title = right;
-    } else {
-      // Pattern: "Song Name - Official Video" → just use left
-      title = left;
+  // Remove brackets entirely
+  raw = raw.replace(/\[.*?\]/g, "").trim();
+
+  // Remove feat/ft/with and beyond
+  raw = raw.replace(/\s+(feat\.|ft\.|featuring|with\s)\s*.*/gi, "").trim();
+
+  // Handle colon: "Dil: Shreya's Version" → "Dil" only if right side is noise
+  if (raw.includes(":")) {
+    const [left, ...rest] = raw.split(":");
+    const right = rest.join(":").trim();
+    if (NOISE_WORDS.some(n => right.toLowerCase().includes(n)) ||
+        /version|mix|flip|cover/i.test(right)) {
+      raw = left.trim();
     }
   }
 
-  // Step 3: Clean the title further
-  title = title
-    .replace(/\(official.*?\)/gi, "")
-    .replace(/\(lyric.*?\)/gi, "")
-    .replace(/\(full.*?\)/gi, "")
-    .replace(/\(video.*?\)/gi, "")
-    .replace(/\(audio.*?\)/gi, "")
-    .replace(/\[.*?\]/g, "")
-    .replace(/feat\..*/gi, "")
-    .replace(/ft\..*/gi, "")
-    .replace(/:.*$/, "") // remove ": subtitle" like "Dil: Shreya's Version" → "Dil"
-    .replace(/-\s*$/, "") // trailing dash
-    .trim();
+  let songTitle = raw;
+  let extractedArtist = "";
 
-  // Step 4: Clean artist — if it's a channel name use empty (better to search by title only)
-  if (isChannelName(artist)) {
-    artist = "";
-    // Try to extract artist from title if still has pattern
+  // Handle "A - B" pattern
+  if (raw.includes(" - ")) {
+    const dashIdx = raw.indexOf(" - ");
+    const left = raw.slice(0, dashIdx).trim();
+    const right = raw.slice(dashIdx + 3).trim();
+    const leftWords = left.split(/\s+/).length;
+    const rightIsNoise = isNoise(right);
+
+    if (rightIsNoise) {
+      // "Song - Official Video" → song = left
+      songTitle = left;
+    } else if (leftWords <= 4 && !isNoise(left)) {
+      // "Artist Name - Song Title" → artist = left, song = right
+      extractedArtist = left;
+      songTitle = right;
+    } else {
+      songTitle = left;
+    }
   }
 
+  // Final cleanup of song title
+  songTitle = songTitle.replace(/[-:]\s*$/, "").replace(/\s+/g, " ").trim();
+
+  // Determine final artist
+  let cleanArtist = (ytArtist || "")
+    .split(/[,&]/)[0]
+    .replace(/@\w+/g, "")
+    .replace(/vevo/gi, "")
+    .trim();
+
+  // Prefer extracted artist over channel names
+  if (isNoise(cleanArtist) && extractedArtist) {
+    cleanArtist = extractedArtist;
+  } else if (extractedArtist && !isNoise(extractedArtist)) {
+    cleanArtist = extractedArtist;
+  }
+
+  console.log(`🧹 Clean: "${ytTitle}" → title="${songTitle}" artist="${cleanArtist}"`);
+
   return {
-    title: title.slice(0, 50).trim(),
-    artist: artist.slice(0, 30).trim(),
+    title: songTitle.slice(0, 60).trim(),
+    artist: cleanArtist.slice(0, 40).trim(),
   };
 };
+
 
 // ── Saavn search + match ──────────────────────────────────────
 const findSaavnSong = async (song) => {
