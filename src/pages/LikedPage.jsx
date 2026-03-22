@@ -15,9 +15,12 @@ export default function LikedPage() {
 
   const playAll = () => {
     if (!likedSongs.length) return;
-    const [first, ...rest] = likedSongs;
-    playSong({ id: first.yt_video_id, title: first.title, artist: first.artist, thumbnail: first.thumbnail_url, duration: first.duration_seconds });
-    rest.forEach(s => addToQueue({ id: s.yt_video_id, title: s.title, artist: s.artist, thumbnail: s.thumbnail_url, duration: s.duration_seconds }));
+    const songs = likedSongs.map(s => ({ id: s.yt_video_id, title: s.title, artist: s.artist, thumbnail: s.thumbnail_url, duration: s.duration_seconds }));
+    const [first, ...rest] = songs;
+    // Use fromQueue so the queue isn't cleared
+    usePlayerStore.getState().clearQueue();
+    rest.forEach(s => addToQueue(s));
+    playSong(first, { fromQueue: true });
   };
 
   return (

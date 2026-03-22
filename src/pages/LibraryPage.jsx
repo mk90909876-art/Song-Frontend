@@ -63,9 +63,11 @@ export default function LibraryPage() {
 
   const playAll = (songs) => {
     if (!songs.length) return;
-    const first = songs[0];
-    playSong({ id: first.yt_video_id, title: first.title, artist: first.artist, thumbnail: first.thumbnail_url, duration: first.duration_seconds });
-    songs.slice(1).forEach(s => addToQueue({ id: s.yt_video_id, title: s.title, artist: s.artist, thumbnail: s.thumbnail_url, duration: s.duration_seconds }));
+    const songObjs = songs.map(s => ({ id: s.yt_video_id, title: s.title, artist: s.artist, thumbnail: s.thumbnail_url, duration: s.duration_seconds }));
+    const [first, ...rest] = songObjs;
+    usePlayerStore.getState().clearQueue();
+    rest.forEach(s => addToQueue(s));
+    playSong(first, { fromQueue: true });
   };
 
   const songs = selectedPlaylist ? (playlistSongs[selectedPlaylist.id] || []) : [];
