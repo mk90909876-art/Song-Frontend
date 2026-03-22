@@ -386,7 +386,7 @@ export default function Player() {
   return (
     <>
       {/* ── Mini Player ── */}
-      <div style={{ background: "var(--bg-secondary)", borderTop: "1px solid var(--border)", position: isMobile ? "fixed" : "relative", bottom: isMobile ? `${navHeight}px` : "auto", left: 0, right: 0, zIndex: 49, boxSizing: "border-box", width: "100%" }}>
+      <div data-mini-player="true" style={{ background: "var(--bg-secondary)", borderTop: "1px solid var(--border)", position: isMobile ? "fixed" : "relative", bottom: isMobile ? `${navHeight}px` : "auto", left: 0, right: 0, zIndex: 49, boxSizing: "border-box", width: "100%" }}>
         <div style={{ height: "3px", background: "var(--border)", position: "relative", overflow: "hidden" }}>
           <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${duration ? (progress / duration) * 100 : 0}%`, background: "var(--accent)", transition: "width 0.5s linear" }} />
           <input type="range" min="0" max={duration || 100} value={seeking ? seekValue : progress}

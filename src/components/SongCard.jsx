@@ -43,6 +43,13 @@ export function BottomSheet({ song, onClose }) {
     onClose();
   };
 
+  // Calculate how far up from bottom the sheet should sit
+  const getBottomOffset = () => {
+    const nav = document.getElementById("bottom-nav");
+    const mini = document.querySelector("[data-mini-player]");
+    return (nav?.offsetHeight || 0) + (mini?.offsetHeight || 0);
+  };
+
   return (
     <>
       {/* Backdrop */}
@@ -53,13 +60,17 @@ export function BottomSheet({ song, onClose }) {
 
       {/* Sheet */}
       <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0,
+        position: "fixed",
+        bottom: `${getBottomOffset()}px`,
+        left: 0, right: 0,
         background: "var(--bg-secondary)",
         borderTop: "1px solid var(--border)",
         borderRadius: "20px 20px 0 0",
-        zIndex: 10001, maxHeight: "55vh",
+        zIndex: 10001,
+        maxHeight: "70vh",
         display: "flex", flexDirection: "column",
         animation: "slideUp 0.25s ease",
+        boxShadow: "0 -8px 40px rgba(0,0,0,0.6)",
       }}>
         <style>{`@keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }`}</style>
 
