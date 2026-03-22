@@ -11,7 +11,7 @@ function formatDuration(s) {
 }
 
 // ── Bottom Sheet ──────────────────────────────────────────────
-function BottomSheet({ song, onClose }) {
+export function BottomSheet({ song, onClose }) {
   const { playSong, addToQueue, queue } = usePlayerStore();
   const { playlists, addSongToPlaylist } = useLibraryStore();
   const [loadingPlaylists, setLoadingPlaylists] = useState(true);

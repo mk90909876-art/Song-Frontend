@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "../store/playerStore";
+import { BottomSheet } from "./SongCard";
 
 const formatTime = (s) => {
   if (!s || isNaN(s)) return "0:00";
@@ -104,7 +105,10 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
     return () => container.removeEventListener("touchmove", onMove);
   }, [queue.length]);
 
+  const removeTappedRef = useRef(false);
+
   const onTouchStart = (e, i) => {
+    removeTappedRef.current = false;
     state.current = { active: false, index: i, startY: e.touches[0].clientY, holdTimer: null, overIdx: null };
     state.current.holdTimer = setTimeout(() => {
       state.current.active = true;
@@ -115,6 +119,12 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
 
   const onTouchEnd = () => {
     clearTimeout(state.current.holdTimer);
+    if (removeTappedRef.current) {
+      state.current = { active: false, index: null, startY: 0, holdTimer: null, overIdx: null };
+      setDraggingIdx(null); setOverIdx(null); setLiftedIdx(null);
+      removeTappedRef.current = false;
+      return;
+    }
     const { active, index, overIdx: over } = state.current;
     if (!active) { if (index !== null) playFromQueue(index); }
     else if (index !== null && over !== null && index !== over) moveQueueItem(index, over);
@@ -161,7 +171,9 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
               </div>
             </div>
             <button onClick={e => { e.stopPropagation(); removeFromQueue(i); }}
-              style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "26px", height: "26px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              onTouchStart={e => { e.stopPropagation(); removeTappedRef.current = true; }}
+              onTouchEnd={e => { e.stopPropagation(); clearTimeout(state.current.holdTimer); removeFromQueue(i); }}
+              style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "36px", height: "36px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Icons.Remove />
             </button>
           </div>
@@ -204,7 +216,9 @@ export default function Player() {
   const [showQueue, setShowQueue] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
+  const [showMenu, setShowMenu] = useState(false);
   const restoredRef = useRef(false);
+  const silentAudioRef = useRef(null);
 
   useEffect(() => {
     const measure = () => { const nav = document.getElementById("bottom-nav"); if (nav) setNavHeight(nav.offsetHeight); };
@@ -292,6 +306,61 @@ export default function Player() {
     return () => clearInterval(intervalRef.current);
   }, []);
 
+  // ── Background playback: silent audio keeps Chrome audio session alive ──
+  useEffect(() => {
+    // Create a tiny silent WAV as a Blob
+    const sampleRate = 8000;
+    const numSamples = sampleRate; // 1 second
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+    const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+    writeStr(0, 'RIFF'); view.setUint32(4, 36 + numSamples * 2, true); writeStr(8, 'WAVE');
+    writeStr(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    writeStr(36, 'data'); view.setUint32(40, numSamples * 2, true);
+    // samples are already 0 (silent)
+    const blob = new Blob([buffer], { type: 'audio/wav' });
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.loop = true;
+    audio.volume = 0.01; // near-silent
+    silentAudioRef.current = audio;
+
+    return () => {
+      audio.pause();
+      URL.revokeObjectURL(url);
+    };
+  }, []);
+
+  // Start/stop silent audio with playback state
+  useEffect(() => {
+    const audio = silentAudioRef.current;
+    if (!audio) return;
+    if (isPlaying && currentSong) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+  }, [isPlaying, currentSong]);
+
+  // Re-trigger YouTube playback when page becomes visible again
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && usePlayerStore.getState().isPlaying) {
+        const player = window._activePlayer === 'primary' ? window._ytPlayerA : window._ytPlayerB;
+        // YouTube may have paused — try to resume
+        setTimeout(() => {
+          if (player?.getPlayerState && player.getPlayerState() !== 1) {
+            player.playVideo?.();
+          }
+        }, 300);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
   if (!currentSong) return null;
 
   const activePlayer = () => window._activePlayer === "primary" ? window._ytPlayerA : window._ytPlayerB;
@@ -368,12 +437,12 @@ export default function Player() {
           <div style={{ position: "relative", zIndex: 1, height: "100%", display: "flex", flexDirection: "column" }}>
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 8px", flexShrink: 0 }}>
-              <button onClick={() => setShowFullScreen(false)} style={{ ...btn("white"), width: "36px", height: "36px" }}><Icons.ChevronDown /></button>
+              <button onClick={(e) => { e.stopPropagation(); setShowFullScreen(false); }} style={{ ...btn("white"), width: "44px", height: "44px", touchAction: "manipulation", padding: "10px" }}><Icons.ChevronDown /></button>
               <div style={{ textAlign: "center", minWidth: 0, flex: 1, margin: "0 12px" }}>
                 <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px" }}>Now Playing</div>
                 <ScrollingText text={currentSong.artist} style={{ fontSize: "12px", color: "rgba(255,255,255,0.8)", fontWeight: 600, marginTop: "2px" }} />
               </div>
-              <div style={{ width: "36px", flexShrink: 0 }} />
+              <button onClick={(e) => { e.stopPropagation(); setShowMenu(true); }} style={{ ...btn("white"), width: "44px", height: "44px", touchAction: "manipulation", padding: "10px", fontSize: "20px", letterSpacing: "2px" }}>⋮</button>
             </div>
 
             {/* Body — side by side on wide, stacked on mobile portrait */}
@@ -482,6 +551,9 @@ export default function Player() {
           </div>
         </div>
       )}
+
+      {/* 3-dot menu bottom sheet */}
+      {showMenu && currentSong && <BottomSheet song={currentSong} onClose={() => setShowMenu(false)} />}
 
       <style>{`
         @keyframes songbounce { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }
