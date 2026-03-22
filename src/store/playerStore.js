@@ -53,10 +53,9 @@ const cleanForSearch = (title, artist) => {
 // ── Saavn search + match ──────────────────────────────────────
 const findSaavnSong = async (song) => {
   const { title: ct, artist: ca } = cleanForSearch(song.title, song.artist);
-  // ytDuration may be 0 if not yet loaded — that's ok, we skip duration check
-  const ytDur = song.duration || 0;
+  const ytDur = song.duration || 0; // seconds from yt-dlp search results
+  console.log(`🎵 Looking for: "${ct}" by "${ca}" (${ytDur}s)`);
 
-  // Try multiple queries from specific to broad
   const queries = [
     `${ct} ${ca}`.trim(),
     ct,
@@ -73,42 +72,43 @@ const findSaavnSong = async (song) => {
         .filter(s => s.downloadUrl?.length > 0);
       if (!results.length) continue;
 
-      let best = results[0];
+      // Log all candidates
+      results.forEach((s, i) => {
+        console.log(`  [${i}] "${s.name}" dur=${s.duration}s`);
+      });
 
-      // If we have YouTube duration, pick closest match
+      let best;
       if (ytDur > 0) {
+        // Pick closest duration match
         best = results.reduce((b, s) => {
-          // Saavn duration is in seconds as a string e.g. "331"
-          const sd = parseInt(s.duration || "0");
-          const bd = parseInt(b.duration || "0");
+          const sd = Number(s.duration) || 0;
+          const bd = Number(b.duration) || 0;
           return Math.abs(sd - ytDur) < Math.abs(bd - ytDur) ? s : b;
         });
-
-        const saavnDur = parseInt(best.duration || "0");
-        const diff = Math.abs(saavnDur - ytDur);
-        // Reject if off by more than 45s — likely wrong song
+        const diff = Math.abs((Number(best.duration) || 0) - ytDur);
+        console.log(`  → Best: "${best.name}" diff=${diff}s`);
         if (diff > 45) {
-          console.warn(`⚠️ Duration mismatch ${diff}s for "${best.name}", trying next query`);
+          console.warn(`  ⚠️ Too different (${diff}s), trying next query`);
           continue;
         }
+      } else {
+        best = results[0];
+        console.log(`  → No YT duration, using first: "${best.name}"`);
       }
 
-      // Get highest quality URL
       const urls = best.downloadUrl || [];
       const audio = urls.find(u => u.quality === "320kbps")
         || urls.find(u => u.quality === "160kbps")
         || urls[urls.length - 1];
-
       if (!audio?.url) continue;
 
-      console.log(`✅ Saavn match: "${best.name}" @ ${audio.quality}`);
+      console.log(`✅ Saavn: "${best.name}" @ ${audio.quality}`);
       return { url: audio.url, quality: audio.quality, name: best.name };
     } catch (e) {
-      console.warn(`Saavn query "${q}" error:`, e.message);
+      console.warn(`Saavn "${q}" error:`, e.message);
     }
   }
-
-  console.warn(`❌ No Saavn match for: "${song.title}"`);
+  console.warn(`❌ No match: "${song.title}"`);
   return null;
 };
 
@@ -123,6 +123,9 @@ const getAudio = () => {
     el.setAttribute("playsinline", "true");
     el.setAttribute("webkit-playsinline", "true");
     el.preload = "auto";
+    // Must be in DOM for Android media notification to appear
+    el.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;";
+    document.body.appendChild(el);
 
     el.addEventListener("timeupdate", () => {
       if (el.src && el.currentTime > 0) {
@@ -135,21 +138,18 @@ const getAudio = () => {
     });
 
     el.addEventListener("ended", () => {
-      // Guard: only advance if we actually played something
       if (el.currentTime > 1) usePlayerStore.getState().nextSong();
     });
 
-    el.addEventListener("error", (e) => {
-      // Only show error if we have a real src loaded
+    el.addEventListener("error", () => {
       const src = el.src;
       if (!src || src === window.location.href || src.endsWith("/")) return;
-      console.warn("Audio element error:", src.slice(0, 60));
+      console.warn("Audio error:", src.slice(0, 80));
       usePlayerStore.getState().setIsPlaying(false);
     });
 
     el.addEventListener("play", () => {
       usePlayerStore.getState().setIsPlaying(true);
-      // Update media session with current song
       const song = usePlayerStore.getState().currentSong;
       if (song) setMediaSession(song);
     });
@@ -168,6 +168,33 @@ const getAudio = () => {
 const setMediaSession = (song) => {
   if (!("mediaSession" in navigator) || !song) return;
   try {
+    const el = getAudio();
+
+    // Set handlers FIRST — Android requires handlers before showing notification
+    navigator.mediaSession.setActionHandler("play", () => {
+      el.play();
+      usePlayerStore.getState().setIsPlaying(true);
+    });
+    navigator.mediaSession.setActionHandler("pause", () => {
+      el.pause();
+      usePlayerStore.getState().setIsPlaying(false);
+    });
+    navigator.mediaSession.setActionHandler("nexttrack", () => usePlayerStore.getState().nextSong());
+    navigator.mediaSession.setActionHandler("previoustrack", () => usePlayerStore.getState().prevSong());
+    navigator.mediaSession.setActionHandler("seekto", (a) => {
+      el.currentTime = a.seekTime;
+      usePlayerStore.getState().setProgress(a.seekTime);
+    });
+    try {
+      navigator.mediaSession.setActionHandler("seekbackward", (a) => {
+        el.currentTime = Math.max(0, el.currentTime - (a.seekOffset || 10));
+      });
+      navigator.mediaSession.setActionHandler("seekforward", (a) => {
+        el.currentTime = Math.min(el.duration || 0, el.currentTime + (a.seekOffset || 10));
+      });
+    } catch {} // some browsers don't support these
+
+    // Set metadata after handlers
     navigator.mediaSession.metadata = new MediaMetadata({
       title: song.title,
       artist: song.artist,
@@ -177,19 +204,10 @@ const setMediaSession = (song) => {
       ],
     });
     navigator.mediaSession.playbackState = "playing";
-    const el = getAudio();
-    navigator.mediaSession.setActionHandler("play", () => { el.play(); usePlayerStore.getState().setIsPlaying(true); });
-    navigator.mediaSession.setActionHandler("pause", () => { el.pause(); usePlayerStore.getState().setIsPlaying(false); });
-    navigator.mediaSession.setActionHandler("nexttrack", () => usePlayerStore.getState().nextSong());
-    navigator.mediaSession.setActionHandler("previoustrack", () => usePlayerStore.getState().prevSong());
-    navigator.mediaSession.setActionHandler("seekto", (a) => {
-      el.currentTime = a.seekTime;
-      usePlayerStore.getState().setProgress(a.seekTime);
-    });
-    navigator.mediaSession.setActionHandler("seekbackward", (a) => { el.currentTime = Math.max(0, el.currentTime - (a.seekOffset || 10)); });
-    navigator.mediaSession.setActionHandler("seekforward", (a) => { el.currentTime = Math.min(el.duration, el.currentTime + (a.seekOffset || 10)); });
-    console.log("✅ MediaSession set:", song.title);
-  } catch (e) { console.warn("MediaSession error:", e.message); }
+    console.log("✅ MediaSession:", song.title);
+  } catch (e) {
+    console.warn("MediaSession error:", e.message);
+  }
 };
 
 export const usePlayerStore = create((set, get) => ({
