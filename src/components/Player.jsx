@@ -548,8 +548,7 @@ export default function Player() {
 
       {/* ── Portrait Queue Full-Screen Overlay ── */}
       {!isWide && showQueue && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 10000,
+        <div style={{ position: "fixed", inset: 0, zIndex: 10000,
           background: "rgba(0,0,0,0.5)",
           display: "flex", flexDirection: "column",
           justifyContent: "flex-end",
@@ -562,6 +561,7 @@ export default function Player() {
               borderRadius: "20px 20px 0 0",
               display: "flex", flexDirection: "column",
               height: "82vh",
+              overflow: "hidden", // clips to border-radius
               animation: "slideUp 0.3s cubic-bezier(0.32,0.72,0,1)",
             }}>
             {/* Handle */}
@@ -584,8 +584,8 @@ export default function Player() {
 
             <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", flexShrink: 0 }} />
 
-            {/* Queue list */}
-            <div style={{ flex: 1, minHeight: 0, padding: "8px 16px", display: "flex", flexDirection: "column", overflow: "visible" }}>
+            {/* Queue list — overflow auto here so DraggableQueue can scroll */}
+            <div style={{ flex: 1, minHeight: 0, padding: "8px 16px", display: "flex", flexDirection: "column", overflowY: "auto" }}>
               <DraggableQueue queue={queue} removeFromQueue={removeFromQueue} moveQueueItem={moveQueueItem} playFromQueue={(i) => { playFromQueue(i); setShowQueue(false); }} />
             </div>
           </div>

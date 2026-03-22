@@ -144,10 +144,10 @@ export default function SearchPage() {
   const debounceRef = useRef(null);
   const { playSong, searchHistory, addSearchHistory, removeSearchHistory, clearSearchHistory } = usePlayerStore();
 
-  const search = async (q, tab = activeTab) => {
+  const search = async (q, tab = activeTab, saveHistory = false) => {
     if (!q.trim()) { setResults({ songs: [], artists: [], playlists: [] }); setSearched(false); return; }
     setLoading(true);
-    addSearchHistory(q.trim());
+    if (saveHistory) addSearchHistory(q.trim()); // only save on explicit Enter/submit
     try {
       if (tab === "Playlists") {
         const { data } = await api.get(`/api/music/playlist-search?q=${encodeURIComponent(q)}`);
@@ -176,18 +176,18 @@ export default function SearchPage() {
     const val = e.target.value;
     setQuery(val);
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => search(val, activeTab), 500);
+    debounceRef.current = setTimeout(() => search(val, activeTab, false), 500); // debounce = no history save
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     clearTimeout(debounceRef.current);
-    search(query, activeTab);
+    search(query, activeTab, true); // explicit submit = save to history
   };
 
   const switchTab = (tab) => {
     setActiveTab(tab);
-    if (query.trim()) search(query, tab);
+    if (query.trim()) search(query, tab, false);
   };
 
   const currentResults = results[activeTab.toLowerCase()] || [];
@@ -271,7 +271,7 @@ export default function SearchPage() {
                     onMouseEnter={e => e.currentTarget.style.background = "var(--bg-elevated)"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                     <span style={{ fontSize: "16px", color: "var(--text-muted)" }}>↺</span>
-                    <span onClick={() => { setQuery(h); search(h, activeTab); }} style={{ flex: 1, fontSize: "14px" }}>{h}</span>
+                    <span onClick={() => { setQuery(h); search(h, activeTab, false); }} style={{ flex: 1, fontSize: "14px", cursor: "pointer" }}>{h}</span>
                     <button onClick={() => removeSearchHistory(h)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "16px", padding: "2px 6px" }}>✕</button>
                   </div>
                 ))}
