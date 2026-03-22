@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "../store/playerStore";
 import { BottomSheet } from "./SongCard";
+import { unlockAudioSession, resumeAudioSession } from "../utils/audioSession";
 
 const formatTime = (s) => {
   if (!s || isNaN(s)) return "0:00";
@@ -250,6 +251,7 @@ export default function Player() {
       const player = playerId === "primary" ? window._ytPlayerA : window._ytPlayerB;
 
       if (e.data === S.PLAYING) {
+        resumeAudioSession(); // keep iOS audio session alive
         usePlayerStore.getState().setIsPlaying(true);
         usePlayerStore.getState().setDuration(player.getDuration());
         clearInterval(intervalRef.current);
@@ -411,7 +413,7 @@ export default function Player() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
             {!isMobile && <button onClick={prevSong} style={{ ...btn("var(--text-secondary)"), width: "36px", height: "36px" }}><Icons.Prev /></button>}
-            <button onClick={togglePlay} style={{ background: "var(--accent)", border: "none", color: "white", borderRadius: "50%", width: "38px", height: "38px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "10px", flexShrink: 0 }}>
+            <button onClick={() => { unlockAudioSession(); togglePlay(); }} style={{ background: "var(--accent)", border: "none", color: "white", borderRadius: "50%", width: "38px", height: "38px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "10px", flexShrink: 0 }}>
               {isPlaying ? <Icons.Pause /> : <Icons.Play />}
             </button>
             <button onClick={nextSong} style={{ ...btn("var(--text-secondary)"), width: "36px", height: "36px" }}><Icons.Next /></button>
@@ -493,7 +495,7 @@ export default function Player() {
                 {/* Controls */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", marginBottom: "14px" }}>
                   <button onClick={prevSong} style={{ ...btn("white"), width: "40px", height: "40px" }}><Icons.Prev /></button>
-                  <button onClick={togglePlay} style={{ background: "white", border: "none", color: "black", borderRadius: "50%", width: "62px", height: "62px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "17px", boxShadow: "0 8px 24px rgba(255,255,255,0.2)" }}>
+                  <button onClick={() => { unlockAudioSession(); togglePlay(); }} style={{ background: "white", border: "none", color: "black", borderRadius: "50%", width: "62px", height: "62px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "17px", boxShadow: "0 8px 24px rgba(255,255,255,0.2)" }}>
                     {isPlaying ? <Icons.Pause /> : <Icons.Play />}
                   </button>
                   <button onClick={nextSong} style={{ ...btn("white"), width: "40px", height: "40px" }}><Icons.Next /></button>
