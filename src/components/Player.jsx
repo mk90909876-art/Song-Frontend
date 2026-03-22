@@ -267,10 +267,23 @@ export default function Player() {
         if ("mediaSession" in navigator && song) {
           navigator.mediaSession.metadata = new MediaMetadata({ title: song.title, artist: song.artist, artwork: [{ src: song.thumbnail, sizes: "480x360", type: "image/jpeg" }] });
           navigator.mediaSession.playbackState = "playing";
-          navigator.mediaSession.setActionHandler("play", () => { player?.playVideo(); usePlayerStore.getState().setIsPlaying(true); });
-          navigator.mediaSession.setActionHandler("pause", () => { player?.pauseVideo(); usePlayerStore.getState().setIsPlaying(false); });
+          navigator.mediaSession.setActionHandler("play", () => {
+            if (window._audioEl?.src) window._audioEl.play();
+            else player?.playVideo();
+            usePlayerStore.getState().setIsPlaying(true);
+          });
+          navigator.mediaSession.setActionHandler("pause", () => {
+            if (window._audioEl?.src) window._audioEl.pause();
+            else player?.pauseVideo();
+            usePlayerStore.getState().setIsPlaying(false);
+          });
           navigator.mediaSession.setActionHandler("nexttrack", () => usePlayerStore.getState().nextSong());
           navigator.mediaSession.setActionHandler("previoustrack", () => usePlayerStore.getState().prevSong());
+          navigator.mediaSession.setActionHandler("seekto", (e) => {
+            if (window._audioEl?.src) window._audioEl.currentTime = e.seekTime;
+            else player?.seekTo?.(e.seekTime, true);
+            usePlayerStore.getState().setProgress(e.seekTime);
+          });
         }
       } else if (e.data === S.PAUSED) {
         usePlayerStore.getState().setIsPlaying(false);
@@ -371,7 +384,11 @@ export default function Player() {
   const handleSeekEnd = (e) => {
     const val = parseFloat(e.target.value);
     setSeeking(false);
-    activePlayer()?.seekTo?.(val, true);
+    if (window._audioEl?.src) {
+      window._audioEl.currentTime = val; // native audio seek
+    } else {
+      activePlayer()?.seekTo?.(val, true);
+    }
     setProgress(val);
   };
 

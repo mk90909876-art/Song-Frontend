@@ -77,6 +77,61 @@ export const usePlayerStore = create((set, get) => ({
   },
   setIsPlaying: (isPlaying) => set({ isPlaying }),
 
+  // ── Native audio for background play ─────────────────────
+  // window._audioEl = the <audio> element
+  // On mobile: use native audio (keeps playing when screen locks)
+  // On desktop: use YouTube IFrame (better quality, no CORS issues)
+  _loadNativeAudio: async (song) => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (!isMobile) return;
+
+    try {
+      const workerUrl = import.meta.env.VITE_STREAM_WORKER_URL;
+      if (!workerUrl) throw new Error("No worker URL configured");
+
+      const res = await fetch(`${workerUrl}?v=${song.id}`, {
+        headers: { "X-Stream-Token": import.meta.env.VITE_STREAM_TOKEN || "" },
+      });
+      const data = await res.json();
+      if (!data.url) throw new Error(data.error || "No stream URL");
+
+      if (!window._audioEl) {
+        window._audioEl = new Audio();
+        window._audioEl.setAttribute("playsinline", "true");
+        window._audioEl.setAttribute("webkit-playsinline", "true");
+        window._audioEl.addEventListener("timeupdate", () => {
+          usePlayerStore.getState().setProgress(window._audioEl.currentTime);
+        });
+        window._audioEl.addEventListener("loadedmetadata", () => {
+          usePlayerStore.getState().setDuration(window._audioEl.duration);
+        });
+        window._audioEl.addEventListener("ended", () => {
+          usePlayerStore.getState().nextSong();
+        });
+        window._audioEl.addEventListener("error", () => {
+          console.warn("Native audio error, falling back to IFrame");
+          window._audioEl = null;
+          const vol = usePlayerStore.getState().volume;
+          window._ytPlayerA?.setVolume?.(vol * 100);
+        });
+      }
+
+      const savedPos = usePlayerStore.getState().savedProgress;
+      window._audioEl.src = data.url;
+      window._audioEl.volume = usePlayerStore.getState().volume;
+      window._audioEl.load();
+      await window._audioEl.play();
+      if (savedPos > 3) window._audioEl.currentTime = savedPos;
+      window._ytPlayerA?.setVolume?.(0);
+      window._ytPlayerB?.setVolume?.(0);
+      console.log("Native audio playing:", song.title, data.mimeType);
+    } catch (err) {
+      console.warn("Native audio failed, IFrame only:", err.message);
+      window._audioEl = null;
+    }
+  },
+
+
   playSong: (song) => {
     const { history, currentSong, autoQueue, queue } = get();
     const newHistory = currentSong
@@ -87,6 +142,13 @@ export const usePlayerStore = create((set, get) => ({
     set(newState);
     saveSession({ currentSong: song, queue, progress: 0 });
 
+    // Stop any existing native audio
+    if (window._audioEl) {
+      window._audioEl.pause();
+      window._audioEl.src = "";
+    }
+
+    // Load IFrame (handles metadata, thumbnail, events on desktop)
     const tryLoad = (playerId = "primary") => {
       const player = playerId === "primary" ? window._ytPlayerA : window._ytPlayerB;
       if (player?.loadVideoById) {
@@ -97,6 +159,9 @@ export const usePlayerStore = create((set, get) => ({
       }
     };
     tryLoad("primary");
+
+    // Also load native audio for mobile background play
+    get()._loadNativeAudio(song);
 
     // Preload next song into secondary player
     const currentQueue = get().queue;
@@ -212,13 +277,15 @@ export const usePlayerStore = create((set, get) => ({
 
   togglePlay: () => {
     const { isPlaying } = get();
-    const player = window._activePlayer === "primary" ? window._ytPlayerA : window._ytPlayerB;
-    if (isPlaying) {
-      player?.pauseVideo?.();
-      set({ isPlaying: false });
+    if (window._audioEl?.src) {
+      // Mobile native audio
+      if (isPlaying) { window._audioEl.pause(); set({ isPlaying: false }); }
+      else { window._audioEl.play(); set({ isPlaying: true }); }
     } else {
-      player?.playVideo?.();
-      set({ isPlaying: true });
+      // Desktop IFrame
+      const player = window._activePlayer === "primary" ? window._ytPlayerA : window._ytPlayerB;
+      if (isPlaying) { player?.pauseVideo?.(); set({ isPlaying: false }); }
+      else { player?.playVideo?.(); set({ isPlaying: true }); }
     }
   },
 
@@ -229,8 +296,12 @@ export const usePlayerStore = create((set, get) => ({
 
   setVolume: (v) => {
     localStorage.setItem("volume", v);
-    window._ytPlayerA?.setVolume?.(v * 100);
-    window._ytPlayerB?.setVolume?.(0); // keep secondary silent
+    if (window._audioEl?.src) {
+      window._audioEl.volume = v; // native audio
+    } else {
+      window._ytPlayerA?.setVolume?.(v * 100);
+      window._ytPlayerB?.setVolume?.(0);
+    }
     set({ volume: v });
   },
 
