@@ -228,6 +228,24 @@ export default function Player() {
     return () => window.removeEventListener("resize", measure);
   }, []);
 
+  // iOS requires a user gesture to start audio — resume pending Saavn audio on any tap
+  useEffect(() => {
+    const unlock = () => {
+      if (window._saavnPending && window._audioEl?.src) {
+        window._audioEl.play().then(() => {
+          window._saavnPending = false;
+          console.log("Saavn audio unlocked by gesture");
+        }).catch(() => {});
+      }
+    };
+    document.addEventListener("touchstart", unlock, { once: false, passive: true });
+    document.addEventListener("click", unlock, { once: false });
+    return () => {
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("click", unlock);
+    };
+  }, []);
+
   useEffect(() => {
     const handle = () => { setIsMobile(window.innerWidth <= 768); setIsLandscape(window.innerWidth > window.innerHeight); };
     window.addEventListener("resize", handle);
@@ -265,22 +283,26 @@ export default function Player() {
         setTimeout(() => preloadNext(), 2000);
         const song = usePlayerStore.getState().currentSong;
         if ("mediaSession" in navigator && song) {
-          navigator.mediaSession.metadata = new MediaMetadata({ title: song.title, artist: song.artist, artwork: [{ src: song.thumbnail, sizes: "480x360", type: "image/jpeg" }] });
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: song.title,
+            artist: song.artist,
+            artwork: [{ src: song.thumbnail, sizes: "480x360", type: "image/jpeg" }],
+          });
           navigator.mediaSession.playbackState = "playing";
           navigator.mediaSession.setActionHandler("play", () => {
-            if (window._audioEl?.src) window._audioEl.play();
-            else player?.playVideo();
+            if (window._saavnActive && window._audioEl?.src) window._audioEl.play();
+            else player?.playVideo?.();
             usePlayerStore.getState().setIsPlaying(true);
           });
           navigator.mediaSession.setActionHandler("pause", () => {
-            if (window._audioEl?.src) window._audioEl.pause();
-            else player?.pauseVideo();
+            if (window._saavnActive && window._audioEl?.src) window._audioEl.pause();
+            else player?.pauseVideo?.();
             usePlayerStore.getState().setIsPlaying(false);
           });
           navigator.mediaSession.setActionHandler("nexttrack", () => usePlayerStore.getState().nextSong());
           navigator.mediaSession.setActionHandler("previoustrack", () => usePlayerStore.getState().prevSong());
           navigator.mediaSession.setActionHandler("seekto", (e) => {
-            if (window._audioEl?.src) window._audioEl.currentTime = e.seekTime;
+            if (window._saavnActive && window._audioEl?.src) window._audioEl.currentTime = e.seekTime;
             else player?.seekTo?.(e.seekTime, true);
             usePlayerStore.getState().setProgress(e.seekTime);
           });
@@ -384,8 +406,8 @@ export default function Player() {
   const handleSeekEnd = (e) => {
     const val = parseFloat(e.target.value);
     setSeeking(false);
-    if (window._audioEl?.src) {
-      window._audioEl.currentTime = val; // native audio seek
+    if (window._saavnActive && window._audioEl?.src) {
+      window._audioEl.currentTime = val;
     } else {
       activePlayer()?.seekTo?.(val, true);
     }

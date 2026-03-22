@@ -4,6 +4,7 @@ const MAX_HISTORY = 50;
 const MAX_SEARCH_HISTORY = 20;
 const QUEUE_MAX = 20;
 const QUEUE_REFILL_AT = 10;
+const SAAVN = "https://jiosaavn-api.mk90909876.workers.dev";
 
 // ── Persist helpers ───────────────────────────────────────────
 const saveSession = (state) => {
@@ -27,12 +28,81 @@ const loadSession = () => {
 const loadSearchHistory = () => {
   try { return JSON.parse(localStorage.getItem("search_history") || "[]"); } catch { return []; }
 };
-
-const saveSearchHistory = (history) => {
-  try { localStorage.setItem("search_history", JSON.stringify(history)); } catch {}
+const saveSearchHistory = (h) => {
+  try { localStorage.setItem("search_history", JSON.stringify(h)); } catch {}
 };
 
 const session = loadSession();
+
+// ── JioSaavn helpers ──────────────────────────────────────────
+// Search JioSaavn and return best matching audio URL (320kbps m4a)
+const getSaavnUrl = async (title, artist) => {
+  try {
+    const q = encodeURIComponent(`${title} ${artist}`.slice(0, 60));
+    const res = await fetch(`${SAAVN}/api/search/songs?query=${q}&limit=5`);
+    if (!res.ok) throw new Error(`Saavn search ${res.status}`);
+    const data = await res.json();
+    const songs = data?.data?.results || [];
+    if (!songs.length) throw new Error("No results");
+
+    // Pick best match — first result is usually correct
+    const song = songs[0];
+
+    // downloadUrl is array sorted by quality — pick highest (320kbps)
+    const urls = song.downloadUrl || [];
+    const best = urls.find(u => u.quality === "320kbps") ||
+                 urls.find(u => u.quality === "160kbps") ||
+                 urls[urls.length - 1];
+
+    if (!best?.url) throw new Error("No download URL");
+    console.log(`✅ Saavn match: "${song.name}" quality: ${best.quality}`);
+    return { url: best.url, quality: best.quality, saavnId: song.id };
+  } catch (err) {
+    console.warn("Saavn lookup failed:", err.message);
+    return null;
+  }
+};
+
+// ── Audio element singleton ───────────────────────────────────
+const initAudioEl = () => {
+  if (window._audioEl) return window._audioEl;
+  const el = new Audio();
+  el.setAttribute("playsinline", "true");
+  el.setAttribute("webkit-playsinline", "true");
+  el.preload = "auto";
+
+  el.addEventListener("timeupdate", () => {
+    const store = usePlayerStore.getState();
+    store.setProgress(el.currentTime);
+  });
+  el.addEventListener("loadedmetadata", () => {
+    usePlayerStore.getState().setDuration(el.duration);
+  });
+  el.addEventListener("ended", () => {
+    usePlayerStore.getState().nextSong();
+  });
+  el.addEventListener("error", (e) => {
+    console.warn("Audio element error:", e);
+    // Fall back: mark saavn as unavailable, keep IFrame
+    window._saavnActive = false;
+    const vol = usePlayerStore.getState().volume;
+    window._ytPlayerA?.setVolume?.(vol * 100);
+  });
+  el.addEventListener("play", () => {
+    usePlayerStore.getState().setIsPlaying(true);
+    window._saavnActive = true;
+    // Mute IFrame when native audio is playing
+    window._ytPlayerA?.setVolume?.(0);
+    window._ytPlayerB?.setVolume?.(0);
+  });
+  el.addEventListener("pause", () => {
+    if (window._saavnActive) usePlayerStore.getState().setIsPlaying(false);
+  });
+
+  window._audioEl = el;
+  window._saavnActive = false;
+  return el;
+};
 
 export const usePlayerStore = create((set, get) => ({
   currentSong: session.currentSong,
@@ -46,9 +116,18 @@ export const usePlayerStore = create((set, get) => ({
   duration: 0,
   autoQueue: localStorage.getItem("autoQueue") !== "false",
   savedProgress: session.progress,
-  searchHistory: loadSearchHistory(), // local only, never uploaded
+  searchHistory: loadSearchHistory(),
 
-  // ── Search history ────────────────────────────────────────
+  setDuration: (duration) => set({ duration }),
+  setProgress: (progress) => {
+    set({ progress });
+    if (Math.floor(progress) % 5 === 0) {
+      try { localStorage.setItem("session_progress", String(progress)); } catch {}
+    }
+  },
+  setIsPlaying: (isPlaying) => set({ isPlaying }),
+
+  // ── Search history ─────────────────────────────────────────
   addSearchHistory: (query) => {
     if (!query?.trim()) return;
     const q = query.trim();
@@ -67,95 +146,20 @@ export const usePlayerStore = create((set, get) => ({
     saveSearchHistory([]);
   },
 
-  setDuration: (duration) => set({ duration }),
-  setProgress: (progress) => {
-    set({ progress });
-    // Save progress every ~5s to avoid too many writes
-    if (Math.floor(progress) % 5 === 0) {
-      try { localStorage.setItem("session_progress", String(progress)); } catch {}
-    }
-  },
-  setIsPlaying: (isPlaying) => set({ isPlaying }),
-
-  // ── Native audio for background play ─────────────────────
-  // window._audioEl = the <audio> element
-  // On mobile: use native audio (keeps playing when screen locks)
-  // On desktop: use YouTube IFrame (better quality, no CORS issues)
-  _loadNativeAudio: async (song) => {
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (!isMobile) return;
-
-    const workerUrl = import.meta.env.VITE_STREAM_WORKER_URL;
-    if (!workerUrl) return;
-
-    try {
-      // Point audio src directly at Worker — Worker proxies YouTube bytes
-      // This means audio comes from YOUR domain → no CORS → OS keeps it alive in background
-      const token = import.meta.env.VITE_STREAM_TOKEN || "";
-      const streamUrl = `${workerUrl}?v=${song.id}`;
-
-      if (!window._audioEl) {
-        window._audioEl = new Audio();
-        window._audioEl.setAttribute("playsinline", "true");
-        window._audioEl.setAttribute("webkit-playsinline", "true");
-        window._audioEl.crossOrigin = "anonymous";
-        window._audioEl.addEventListener("timeupdate", () => {
-          usePlayerStore.getState().setProgress(window._audioEl.currentTime);
-        });
-        window._audioEl.addEventListener("loadedmetadata", () => {
-          usePlayerStore.getState().setDuration(window._audioEl.duration);
-        });
-        window._audioEl.addEventListener("ended", () => {
-          usePlayerStore.getState().nextSong();
-        });
-        window._audioEl.addEventListener("error", (e) => {
-          console.warn("Native audio error, falling back to IFrame:", e);
-          window._audioEl = null;
-          const vol = usePlayerStore.getState().volume;
-          window._ytPlayerA?.setVolume?.(vol * 100);
-        });
-      }
-
-      const savedPos = usePlayerStore.getState().savedProgress;
-
-      // Set src — Worker handles auth via query param to avoid CORS preflight
-      window._audioEl.src = token ? `${streamUrl}&t=${token}` : streamUrl;
-      window._audioEl.volume = usePlayerStore.getState().volume;
-      window._audioEl.load();
-      await window._audioEl.play();
-
-      if (savedPos > 3) window._audioEl.currentTime = savedPos;
-
-      // Mute IFrame — native audio handles everything on mobile
-      window._ytPlayerA?.setVolume?.(0);
-      window._ytPlayerB?.setVolume?.(0);
-      console.log("✅ Native audio playing (proxied):", song.title);
-    } catch (err) {
-      console.warn("Native audio failed, IFrame fallback:", err.message);
-      window._audioEl = null;
-    }
-  },
-
-
-
-
-  playSong: (song) => {
+  // ── Play via JioSaavn (native audio) + IFrame (fallback) ───
+  playSong: (song, options = {}) => {
+    const { fromQueue = false } = options;
     const { history, currentSong, autoQueue, queue } = get();
+
     const newHistory = currentSong
       ? [currentSong, ...history.filter(h => h.id !== currentSong.id)].slice(0, MAX_HISTORY)
       : history;
 
-    const newState = { currentSong: song, isPlaying: true, progress: 0, duration: 0, history: newHistory, savedProgress: 0 };
-    set(newState);
-    saveSession({ currentSong: song, queue, progress: 0 });
+    const newQueue = fromQueue ? queue : [];
+    set({ currentSong: song, isPlaying: true, progress: 0, duration: 0, history: newHistory, savedProgress: 0, queue: newQueue });
+    saveSession({ currentSong: song, queue: newQueue, progress: 0 });
 
-    // Stop any existing native audio
-    if (window._audioEl) {
-      window._audioEl.pause();
-      window._audioEl.src = "";
-    }
-
-    // Load IFrame (handles metadata, thumbnail, events on desktop)
+    // ── 1. Load IFrame (provides duration/thumbnail on desktop, fallback on mobile) ──
     const tryLoad = (playerId = "primary") => {
       const player = playerId === "primary" ? window._ytPlayerA : window._ytPlayerB;
       if (player?.loadVideoById) {
@@ -167,38 +171,61 @@ export const usePlayerStore = create((set, get) => ({
     };
     tryLoad("primary");
 
-    // Also load native audio for mobile background play
-    get()._loadNativeAudio(song);
+    // ── 2. Try JioSaavn for native audio (background play) ───
+    window._saavnActive = false;
+    const audioEl = initAudioEl();
+    audioEl.pause();
+    audioEl.src = "";
 
-    // Preload next song into secondary player
-    const currentQueue = get().queue;
-    if (currentQueue.length > 0) {
-      setTimeout(() => get().preloadNext(), 3000);
-    }
+    getSaavnUrl(song.title, song.artist).then(result => {
+      // Make sure this song is still playing (user might have skipped)
+      if (get().currentSong?.id !== song.id) return;
 
-    // Refill queue if low
-    if (autoQueue && queue.filter(s => s.id !== song.id).length < QUEUE_REFILL_AT) {
+      if (result?.url) {
+        const savedPos = get().savedProgress;
+        audioEl.src = result.url;
+        audioEl.volume = get().volume;
+        audioEl.load();
+        audioEl.play().then(() => {
+          if (savedPos > 3) audioEl.currentTime = savedPos;
+          // Mute IFrame — Saavn audio is playing
+          window._ytPlayerA?.setVolume?.(0);
+          window._ytPlayerB?.setVolume?.(0);
+        }).catch(err => {
+          console.warn("Saavn play() blocked (needs gesture):", err.message);
+          // iOS requires user gesture — audio will start on next user tap
+          window._saavnPending = true;
+        });
+      } else {
+        // No Saavn match — use IFrame with volume
+        const vol = get().volume;
+        window._ytPlayerA?.setVolume?.(vol * 100);
+        window._saavnActive = false;
+        console.log("No Saavn match, using IFrame for:", song.title);
+      }
+    });
+
+    // Preload next
+    if (newQueue.length > 0) setTimeout(() => get().preloadNext(), 3000);
+
+    // Auto queue refill
+    if (autoQueue && newQueue.filter(s => s.id !== song.id).length < QUEUE_REFILL_AT) {
       setTimeout(() => get().fetchMix(song), 2000);
     }
   },
 
-  // Preload next song into the inactive player
   preloadNext: () => {
     const { queue } = get();
-    if (queue.length === 0) return;
-    const nextSong = queue[0];
-    const inactivePlayer = window._activePlayer === "primary" ? window._ytPlayerB : window._ytPlayerA;
-    if (inactivePlayer?.cueVideoById) {
-      inactivePlayer.cueVideoById(nextSong.id);
-      console.log("Preloaded:", nextSong.title);
-    }
+    if (!queue.length) return;
+    const next = queue[0];
+    const inactive = window._activePlayer === "primary" ? window._ytPlayerB : window._ytPlayerA;
+    inactive?.cueVideoById?.(next.id);
   },
 
   fetchMix: async (song) => {
     try {
       const { queue, currentSong, history } = get();
       if (queue.length >= QUEUE_MAX) return;
-
       const token = localStorage.getItem("access_token");
       const res = await fetch(
         `${import.meta.env.VITE_API_URL}/api/music/mix/${song.id}`,
@@ -206,90 +233,69 @@ export const usePlayerStore = create((set, get) => ({
       );
       const data = await res.json();
       if (!data.results?.length) return;
-
-      const existingIds = new Set([
-        ...queue.map(s => s.id),
-        currentSong?.id,
-        ...history.slice(0, 10).map(s => s.id),
-      ]);
-
-      const newSongs = data.results
-        .filter(s => !existingIds.has(s.id))
-        .slice(0, QUEUE_MAX - queue.length);
-
-      if (newSongs.length > 0) {
-        const updatedQueue = [...get().queue, ...newSongs];
-        set({ queue: updatedQueue });
-        saveSession({ currentSong: get().currentSong, queue: updatedQueue, progress: get().progress });
-        console.log(`Auto queue: added ${newSongs.length} songs, total ${updatedQueue.length}`);
+      const existingIds = new Set([...queue.map(s => s.id), currentSong?.id, ...history.slice(0, 10).map(s => s.id)]);
+      const newSongs = data.results.filter(s => !existingIds.has(s.id)).slice(0, QUEUE_MAX - queue.length);
+      if (newSongs.length) {
+        const updated = [...get().queue, ...newSongs];
+        set({ queue: updated });
+        saveSession({ currentSong: get().currentSong, queue: updated, progress: get().progress });
       }
-    } catch (err) {
-      console.error("fetchMix failed:", err);
-    }
+    } catch (err) { console.error("fetchMix failed:", err); }
   },
 
   nextSong: () => {
     const { queue, shuffle, repeat, history, currentSong } = get();
-
     if (repeat === "one") {
-      const player = window._activePlayer === "primary" ? window._ytPlayerA : window._ytPlayerB;
-      player?.seekTo?.(0, true);
-      player?.playVideo?.();
+      if (window._saavnActive && window._audioEl) {
+        window._audioEl.currentTime = 0;
+        window._audioEl.play();
+      } else {
+        const player = window._activePlayer === "primary" ? window._ytPlayerA : window._ytPlayerB;
+        player?.seekTo?.(0, true); player?.playVideo?.();
+      }
       set({ progress: 0 });
       return;
     }
-
-    if (queue.length === 0) {
-      if (repeat === "all" && history.length > 0) {
-        get().playSong(history[history.length - 1]);
-      } else {
-        set({ isPlaying: false });
-      }
+    if (!queue.length) {
+      if (repeat === "all" && history.length) get().playSong(history[history.length - 1], { fromQueue: true });
+      else set({ isPlaying: false });
       return;
     }
-
-    const nextIndex = shuffle ? Math.floor(Math.random() * queue.length) : 0;
-    const next = queue[nextIndex];
-    const newQueue = queue.filter((_, i) => i !== nextIndex);
-    set({ queue: newQueue });
-    get().playSong(next);
-
-    // Refill if low
-    if (get().autoQueue && newQueue.length < QUEUE_REFILL_AT && currentSong) {
-      setTimeout(() => get().fetchMix(currentSong), 1000);
-    }
+    const idx = shuffle ? Math.floor(Math.random() * queue.length) : 0;
+    const next = queue[idx];
+    set({ queue: queue.filter((_, i) => i !== idx) });
+    get().playSong(next, { fromQueue: true });
   },
 
   prevSong: () => {
     const { history, progress } = get();
     if (progress > 3) {
-      const player = window._activePlayer === "primary" ? window._ytPlayerA : window._ytPlayerB;
-      player?.seekTo?.(0, true);
-      player?.playVideo?.();
+      if (window._saavnActive && window._audioEl) {
+        window._audioEl.currentTime = 0;
+      } else {
+        const player = window._activePlayer === "primary" ? window._ytPlayerA : window._ytPlayerB;
+        player?.seekTo?.(0, true); player?.playVideo?.();
+      }
       set({ progress: 0 });
       return;
     }
-    if (history.length > 1) get().playSong(history[1]);
-    else if (history.length === 1) get().playSong(history[0]);
+    if (history.length) get().playSong(history[0], { fromQueue: true });
   },
 
   playFromQueue: (index) => {
     const { queue } = get();
     const song = queue[index];
     if (!song) return;
-    const newQueue = queue.filter((_, i) => i !== index);
-    set({ queue: newQueue });
-    get().playSong(song);
+    set({ queue: queue.filter((_, i) => i !== index) });
+    get().playSong(song, { fromQueue: true });
   },
 
   togglePlay: () => {
     const { isPlaying } = get();
-    if (window._audioEl?.src) {
-      // Mobile native audio
+    if (window._saavnActive && window._audioEl?.src) {
       if (isPlaying) { window._audioEl.pause(); set({ isPlaying: false }); }
       else { window._audioEl.play(); set({ isPlaying: true }); }
     } else {
-      // Desktop IFrame
       const player = window._activePlayer === "primary" ? window._ytPlayerA : window._ytPlayerB;
       if (isPlaying) { player?.pauseVideo?.(); set({ isPlaying: false }); }
       else { player?.playVideo?.(); set({ isPlaying: true }); }
@@ -303,29 +309,29 @@ export const usePlayerStore = create((set, get) => ({
 
   setVolume: (v) => {
     localStorage.setItem("volume", v);
-    if (window._audioEl?.src) {
-      window._audioEl.volume = v; // native audio
+    if (window._saavnActive && window._audioEl?.src) {
+      window._audioEl.volume = v;
     } else {
       window._ytPlayerA?.setVolume?.(v * 100);
-      window._ytPlayerB?.setVolume?.(0);
     }
+    window._ytPlayerB?.setVolume?.(0);
     set({ volume: v });
   },
 
   addToQueue: (song) => {
-    const newQueue = [...get().queue, song];
-    set({ queue: newQueue });
-    saveSession({ currentSong: get().currentSong, queue: newQueue, progress: get().progress });
+    const q = [...get().queue, song];
+    set({ queue: q });
+    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress });
   },
   playNext: (song) => {
-    const newQueue = [song, ...get().queue];
-    set({ queue: newQueue });
-    saveSession({ currentSong: get().currentSong, queue: newQueue, progress: get().progress });
+    const q = [song, ...get().queue];
+    set({ queue: q });
+    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress });
   },
   removeFromQueue: (index) => {
-    const newQueue = get().queue.filter((_, i) => i !== index);
-    set({ queue: newQueue });
-    saveSession({ currentSong: get().currentSong, queue: newQueue, progress: get().progress });
+    const q = get().queue.filter((_, i) => i !== index);
+    set({ queue: q });
+    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress });
   },
   moveQueueItem: (from, to) => {
     const q = [...get().queue];
