@@ -62,6 +62,9 @@ const isNoise = (str) => {
 // Has commas suggesting a list of artists "TALWIINDER, NDS, RIPPY"
 const looksLikeArtistList = (str) => str.includes(",");
 
+// Patterns that mean "what comes AFTER the colon is the real title"
+const COLON_LEFT_IS_NOISE = /^(full\s+video|full\s+song|official\s+video|lyrical?\s+video|audio\s+song|title\s+track|title\s+song)/i;
+
 // ── Title cleaner — handles ALL YouTube title patterns ────────
 const cleanForSearch = (ytTitle, ytArtist) => {
   let raw = (ytTitle || "").replace(/@\S+/g, "").trim();
@@ -80,15 +83,21 @@ const cleanForSearch = (ytTitle, ytArtist) => {
   // Remove feat/ft/with and everything after
   raw = raw.replace(/\s+(feat\.|ft\.|featuring)\s*.*/gi, "").trim();
 
-  // Handle colon subtitle: "Dil: Shreya's Version" → "Dil"
-  // "Raghav's Version : Ek Villain Returns" → strip from colon
+  // Strip "Title Song", "Title Track" suffix
+  raw = raw.replace(/\s+(title\s+song|title\s+track)\b/gi, "").trim();
+
+  // Handle colon
   if (raw.includes(":")) {
     const colonIdx = raw.indexOf(":");
     const left = raw.slice(0, colonIdx).trim();
     const right = raw.slice(colonIdx + 1).trim();
-    // Strip if right side has noise words or version/mix keywords
-    if (NOISE_WORDS.some(n => right.toLowerCase().split(/\s+/).includes(n)) ||
-        /version|mix|flip|cover|returns|rewind/i.test(right)) {
+
+    if (COLON_LEFT_IS_NOISE.test(left)) {
+      // "Full Video: Raanjhan" → use right side
+      raw = right;
+    } else {
+      // "Dost Banke : Gurnazar" or "Dil: Shreya's Version" → always strip colon and beyond
+      // The part after colon is always either noise or artist name (already in ytArtist)
       raw = left.trim();
     }
   }
@@ -109,15 +118,18 @@ const cleanForSearch = (ytTitle, ytArtist) => {
       // "Song - Official Video" → song only
       songTitle = left;
     } else if (rightIsArtistList) {
-      // "HASEEN - TALWIINDER, NDS, RIPPY" → song=left, artists=right (ignore)
+      // "HASEEN - TALWIINDER, NDS, RIPPY" → song=left, first artist from right
       songTitle = left;
-      // first of the artist list
       extractedArtist = right.split(",")[0].trim();
-    } else if (leftWords <= 4 && !isNoise(left)) {
+    } else if (leftWords <= 4 && !isNoise(left) && left === left.toUpperCase() === false) {
       // "Aditya Rikhari - Paaro" → artist=left, song=right
+      // Extra check: if left is ALL CAPS it's more likely the song (e.g. "DEEWANIYAT")
       extractedArtist = left;
       songTitle = right;
+    } else if (isNoise(right)) {
+      songTitle = left;
     } else {
+      // Default: left is song (covers "DEEWANIYAT - Ek Deewane Ki...")
       songTitle = left;
     }
   }
