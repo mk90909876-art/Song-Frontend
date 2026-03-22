@@ -127,8 +127,8 @@ const getSaavnAudio = async (song) => {
       const saavnDur = parseInt(best.duration?.total || best.duration || 0);
       const durDiff = ytDuration ? Math.abs(saavnDur - ytDuration) : 0;
 
-      // Reject if duration differs by more than 10 seconds (wrong song)
-      if (ytDuration && durDiff > 10) {
+      // Reject if duration differs by more than 30 seconds (wrong song)
+      if (ytDuration && durDiff > 30) {
         console.warn(`⚠️ Duration mismatch: YT=${ytDuration}s Saavn=${saavnDur}s diff=${durDiff}s — skipping "${best.name}"`);
         continue;
       }
@@ -172,14 +172,18 @@ const setupAudioListeners = () => {
   });
 
   el.addEventListener("ended", () => {
-    usePlayerStore.getState().nextSong();
+    // Only advance if audio actually finished (not just src changed)
+    if (el.currentTime > 0) {
+      usePlayerStore.getState().nextSong();
+    }
   });
 
   el.addEventListener("error", () => {
-    console.warn("Audio error for:", usePlayerStore.getState().currentSong?.title);
+    // Ignore error if src is empty (happens when we clear for next song)
+    if (!window._audioEl?.src || window._audioEl.src === window.location.href) return;
+    const currentSong = usePlayerStore.getState().currentSong;
+    console.warn("Audio error for:", currentSong?.title);
     usePlayerStore.getState().setIsPlaying(false);
-    // Try next song after brief pause
-    setTimeout(() => usePlayerStore.getState().nextSong(), 1500);
   });
 
   el.addEventListener("play", () => {
@@ -292,7 +296,8 @@ export const usePlayerStore = create((set, get) => ({
     setupAudioListeners();
     const el = getAudioEl();
     el.pause();
-    el.src = "";
+    // Don't set src="" — that triggers error event → skip chain
+    // Just pause and let the new src overwrite it
     el.volume = get().volume;
 
     // Fetch Saavn URL and play
