@@ -48,15 +48,18 @@ export const usePlayerStore = create((set, get) => ({
   },
   setIsPlaying: (isPlaying) => set({ isPlaying }),
 
-  playSong: (song) => {
+  playSong: (song, options = {}) => {
+    const { fromQueue = false } = options;
     const { history, currentSong, autoQueue, queue } = get();
     const newHistory = currentSong
       ? [currentSong, ...history.filter(h => h.id !== currentSong.id)].slice(0, MAX_HISTORY)
       : history;
 
-    const newState = { currentSong: song, isPlaying: true, progress: 0, duration: 0, history: newHistory, savedProgress: 0 };
+    // If triggered from search/pages (not from queue), clear queue and fetch fresh mix
+    const newQueue = fromQueue ? queue : [];
+    const newState = { currentSong: song, isPlaying: true, progress: 0, duration: 0, history: newHistory, savedProgress: 0, queue: newQueue };
     set(newState);
-    saveSession({ currentSong: song, queue, progress: 0 });
+    saveSession({ currentSong: song, queue: newQueue, progress: 0 });
 
     const tryLoad = (playerId = "primary") => {
       const player = playerId === "primary" ? window._ytPlayerA : window._ytPlayerB;
@@ -70,13 +73,12 @@ export const usePlayerStore = create((set, get) => ({
     tryLoad("primary");
 
     // Preload next song into secondary player
-    const currentQueue = get().queue;
-    if (currentQueue.length > 0) {
+    if (newQueue.length > 0) {
       setTimeout(() => get().preloadNext(), 3000);
     }
 
-    // Refill queue if low
-    if (autoQueue && queue.filter(s => s.id !== song.id).length < QUEUE_REFILL_AT) {
+    // Fetch fresh mix for new song (always when from search/pages, or when queue is low)
+    if (autoQueue && (!fromQueue || newQueue.filter(s => s.id !== song.id).length < QUEUE_REFILL_AT)) {
       setTimeout(() => get().fetchMix(song), 2000);
     }
   },
@@ -140,7 +142,7 @@ export const usePlayerStore = create((set, get) => ({
 
     if (queue.length === 0) {
       if (repeat === "all" && history.length > 0) {
-        get().playSong(history[history.length - 1]);
+        get().playSong(history[history.length - 1], { fromQueue: true });
       } else {
         set({ isPlaying: false });
       }
@@ -151,12 +153,7 @@ export const usePlayerStore = create((set, get) => ({
     const next = queue[nextIndex];
     const newQueue = queue.filter((_, i) => i !== nextIndex);
     set({ queue: newQueue });
-    get().playSong(next);
-
-    // Refill if low
-    if (get().autoQueue && newQueue.length < QUEUE_REFILL_AT && currentSong) {
-      setTimeout(() => get().fetchMix(currentSong), 1000);
-    }
+    get().playSong(next, { fromQueue: true });
   },
 
   prevSong: () => {
@@ -168,8 +165,7 @@ export const usePlayerStore = create((set, get) => ({
       set({ progress: 0 });
       return;
     }
-    if (history.length > 1) get().playSong(history[1]);
-    else if (history.length === 1) get().playSong(history[0]);
+    if (history.length > 0) get().playSong(history[0], { fromQueue: true });
   },
 
   playFromQueue: (index) => {
@@ -178,7 +174,7 @@ export const usePlayerStore = create((set, get) => ({
     if (!song) return;
     const newQueue = queue.filter((_, i) => i !== index);
     set({ queue: newQueue });
-    get().playSong(song);
+    get().playSong(song, { fromQueue: true });
   },
 
   togglePlay: () => {
