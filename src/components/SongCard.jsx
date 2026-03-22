@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { usePlayerStore } from "../store/playerStore";
 import LikeButton from "./LikeButton";
 import api from "../utils/api";
@@ -14,7 +14,7 @@ function formatDuration(s) {
 export function BottomSheet({ song, onClose }) {
   const { playSong, addToQueue, queue } = usePlayerStore();
   const { playlists, addSongToPlaylist } = useLibraryStore();
-  const [loadingPlaylists, setLoadingPlaylists] = useState(true);
+  const [loadingPlaylists] = useState(false); // playlists already loaded in libraryStore
 
 
 
@@ -48,7 +48,7 @@ export function BottomSheet({ song, onClose }) {
       {/* Backdrop */}
       <div onClick={onClose} style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
-        zIndex: 100, backdropFilter: "blur(2px)",
+        zIndex: 10000, backdropFilter: "blur(2px)",
       }} />
 
       {/* Sheet */}
@@ -57,7 +57,7 @@ export function BottomSheet({ song, onClose }) {
         background: "var(--bg-secondary)",
         borderTop: "1px solid var(--border)",
         borderRadius: "20px 20px 0 0",
-        zIndex: 101, maxHeight: "55vh",
+        zIndex: 10001, maxHeight: "55vh",
         display: "flex", flexDirection: "column",
         animation: "slideUp 0.25s ease",
       }}>

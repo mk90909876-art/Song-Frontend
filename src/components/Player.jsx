@@ -515,31 +515,25 @@ export default function Player() {
                   <button onClick={toggleRepeat} style={{ ...btn(repeat !== "none" ? "var(--accent)" : "rgba(255,255,255,0.4)"), width: "32px", height: "32px" }}><Icons.Repeat mode={repeat} /></button>
                 </div>
 
-                {/* Up Next toggle (mobile portrait only) */}
+                {/* Up Next button (mobile portrait only) */}
                 {!isWide && (
-                  <button onClick={() => setShowQueue(!showQueue)}
+                  <button onClick={() => setShowQueue(true)}
                     style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "20px", padding: "8px 20px", cursor: "pointer", fontSize: "13px", fontWeight: 600, width: "100%" }}>
                     <div style={{ width: "16px", height: "16px" }}><Icons.Queue /></div>
                     Up Next {queue.length > 0 && `(${queue.length})`}
-                    <div style={{ width: "14px", height: "14px" }}>{showQueue ? <Icons.ChevronDown /> : <Icons.ChevronUp />}</div>
+                    <div style={{ width: "14px", height: "14px" }}><Icons.ChevronUp /></div>
                   </button>
                 )}
               </div>
 
-              {/* ── Right: Queue ── */}
-              {(isWide || showQueue) && (
+              {/* ── Right: Queue (desktop wide) ── */}
+              {isWide && (
                 <div style={{
-                  width: isWide ? "50%" : "100%",
-                  flexShrink: 0,
-                  borderLeft: isWide ? "1px solid rgba(255,255,255,0.1)" : "none",
-                  borderTop: !isWide ? "1px solid rgba(255,255,255,0.1)" : "none",
-                  display: "flex",
-                  flexDirection: "column",
-                  minHeight: 0,
-                  maxHeight: isWide ? "100%" : "260px",
-                  padding: isWide ? "16px 24px" : "12px 24px",
-                  boxSizing: "border-box",
-                  overflow: "hidden",
+                  width: "50%", flexShrink: 0,
+                  borderLeft: "1px solid rgba(255,255,255,0.1)",
+                  display: "flex", flexDirection: "column",
+                  minHeight: 0, padding: "16px 24px",
+                  boxSizing: "border-box", overflow: "hidden",
                 }}>
                   <div style={{ fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px", flexShrink: 0 }}>
                     Up Next ({queue.length})
@@ -552,12 +546,60 @@ export default function Player() {
         </div>
       )}
 
+      {/* ── Portrait Queue Full-Screen Overlay ── */}
+      {!isWide && showQueue && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 10000,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex", flexDirection: "column",
+          justifyContent: "flex-end",
+          animation: "fadeIn 0.2s ease",
+        }} onClick={() => setShowQueue(false)}>
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#1a1a1a",
+              borderRadius: "20px 20px 0 0",
+              display: "flex", flexDirection: "column",
+              height: "82vh",
+              animation: "slideUp 0.3s cubic-bezier(0.32,0.72,0,1)",
+            }}>
+            {/* Handle */}
+            <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px", flexShrink: 0 }}>
+              <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.2)", borderRadius: "2px" }} />
+            </div>
+
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 20px 12px", flexShrink: 0 }}>
+              <div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "white" }}>Up Next</div>
+                <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", marginTop: "2px" }}>{queue.length} songs</div>
+              </div>
+              <button
+                onClick={() => setShowQueue(false)}
+                style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "50%", width: "34px", height: "34px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Icons.ChevronDown />
+              </button>
+            </div>
+
+            <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", flexShrink: 0 }} />
+
+            {/* Queue list */}
+            <div style={{ flex: 1, minHeight: 0, padding: "8px 16px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <DraggableQueue queue={queue} removeFromQueue={removeFromQueue} moveQueueItem={moveQueueItem} playFromQueue={(i) => { playFromQueue(i); setShowQueue(false); }} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3-dot menu bottom sheet */}
       {showMenu && currentSong && <BottomSheet song={currentSong} onClose={() => setShowMenu(false)} />}
 
       <style>{`
         @keyframes songbounce { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }
         @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(var(--marquee-shift, -200px)); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
       `}</style>
     </>
   );
