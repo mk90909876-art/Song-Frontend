@@ -32,22 +32,74 @@ const saveSearchHistory = (h) => {
 
 const session = loadSession();
 
+// ── YouTube channel names that are useless for Saavn search ──
+const CHANNEL_NAMES = [
+  "t-series", "sony music", "zee music", "tips official", "yrf", "eros now",
+  "saregama", "speed records", "rajshri", "shemaroo", "colors tv", "star music",
+  "universal music", "warner music", "atlantic records", "umg", "vevo",
+  "official", "music", "records", "entertainment", "productions",
+];
+
+const isChannelName = (name) => {
+  const n = name.toLowerCase();
+  return CHANNEL_NAMES.some(c => n.includes(c));
+};
+
 // ── Title cleaner ─────────────────────────────────────────────
-const cleanForSearch = (title, artist) => {
-  let t = (title || "")
-    .split("|")[0].split("(")[0].split("[")[0]
-    .replace(/feat\..*$/i, "").replace(/ft\..*$/i, "")
-    .replace(/official.*$/i, "").replace(/video.*$/i, "")
-    .replace(/lyric.*$/i, "").replace(/audio.*$/i, "")
-    .trim();
-  if (t.includes(" - ")) t = t.split(" - ")[0].trim();
+// YouTube titles follow patterns like:
+//   "Song Name - Artist | Official Video | Channel"
+//   "Artist - Song Name (Official Video)"
+//   "Song Name (Lyrical) | Movie | Singer | Channel"
+const cleanForSearch = (ytTitle, ytArtist) => {
+  let title = ytTitle || "";
+  let artist = ytArtist || "";
 
-  let a = (artist || "")
-    .split(",")[0].split("&")[0].split(" x ")[0]
-    .replace(/vevo/gi, "").replace(/official/gi, "")
+  // Step 1: Remove everything after | (channel info, movie names etc)
+  title = title.split("|")[0].trim();
+
+  // Step 2: Handle "X - Y" pattern
+  // If title has " - ", figure out which side is song vs artist
+  if (title.includes(" - ")) {
+    const parts = title.split(" - ");
+    const left = parts[0].trim();
+    const right = parts.slice(1).join(" - ").trim();
+
+    // If right side has spaces (longer), it's likely "Artist - Song Title"
+    // If left side is short and right side is longer, left=artist, right=song
+    if (right.length > left.length && left.split(" ").length <= 3) {
+      // Pattern: "Aditya Rikhari - Paaro" → artist=left, song=right
+      artist = left;
+      title = right;
+    } else {
+      // Pattern: "Song Name - Official Video" → just use left
+      title = left;
+    }
+  }
+
+  // Step 3: Clean the title further
+  title = title
+    .replace(/\(official.*?\)/gi, "")
+    .replace(/\(lyric.*?\)/gi, "")
+    .replace(/\(full.*?\)/gi, "")
+    .replace(/\(video.*?\)/gi, "")
+    .replace(/\(audio.*?\)/gi, "")
+    .replace(/\[.*?\]/g, "")
+    .replace(/feat\..*/gi, "")
+    .replace(/ft\..*/gi, "")
+    .replace(/:.*$/, "") // remove ": subtitle" like "Dil: Shreya's Version" → "Dil"
+    .replace(/-\s*$/, "") // trailing dash
     .trim();
 
-  return { title: t.slice(0, 50), artist: a.slice(0, 30) };
+  // Step 4: Clean artist — if it's a channel name use empty (better to search by title only)
+  if (isChannelName(artist)) {
+    artist = "";
+    // Try to extract artist from title if still has pattern
+  }
+
+  return {
+    title: title.slice(0, 50).trim(),
+    artist: artist.slice(0, 30).trim(),
+  };
 };
 
 // ── Saavn search + match ──────────────────────────────────────
@@ -130,6 +182,16 @@ const getAudio = () => {
     el.addEventListener("timeupdate", () => {
       if (el.src && el.currentTime > 0) {
         usePlayerStore.getState().setProgress(el.currentTime);
+        // Keep notification seek bar in sync
+        try {
+          if ("mediaSession" in navigator && el.duration > 0) {
+            navigator.mediaSession.setPositionState({
+              duration: el.duration,
+              playbackRate: 1,
+              position: el.currentTime,
+            });
+          }
+        } catch {}
       }
     });
 
@@ -204,6 +266,18 @@ const setMediaSession = (song) => {
       ],
     });
     navigator.mediaSession.playbackState = "playing";
+
+    // Position state shows seek bar in notification
+    try {
+      if (el.duration > 0) {
+        navigator.mediaSession.setPositionState({
+          duration: el.duration,
+          playbackRate: 1,
+          position: el.currentTime || 0,
+        });
+      }
+    } catch {}
+
     console.log("✅ MediaSession:", song.title);
   } catch (e) {
     console.warn("MediaSession error:", e.message);
