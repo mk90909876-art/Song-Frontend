@@ -35,28 +35,56 @@ const saveSearchHistory = (h) => {
 const session = loadSession();
 
 // ── JioSaavn helpers ──────────────────────────────────────────
-// Search JioSaavn and return best matching audio URL (320kbps m4a)
+const cleanTitle = (title, artist) => {
+  // YouTube titles are like "Song Name - Artist | Official Video | T-Series"
+  // Strip everything after first | or ( or [ to get clean song name
+  let t = title || "";
+  t = t.split("|")[0].trim();       // remove "| Official Video | T-Series"
+  t = t.split("(")[0].trim();       // remove "(Official Video)"
+  t = t.split("[")[0].trim();       // remove "[Full Song]"
+  t = t.split("feat.")[0].trim();   // remove "feat. xyz"
+  t = t.split("Ft.")[0].trim();
+  t = t.split("ft.")[0].trim();
+  // If title has " - Artist" pattern, extract just song name
+  if (t.includes(" - ")) t = t.split(" - ")[0].trim();
+  // Clean artist too
+  let a = artist || "";
+  a = a.split(",")[0].trim();       // use only first artist
+  a = a.split("&")[0].trim();
+  a = a.replace(/VEVO/gi, "").trim();
+  return { cleanTitle: t.slice(0, 50), cleanArtist: a.slice(0, 30) };
+};
+
 const getSaavnUrl = async (title, artist) => {
   try {
-    const q = encodeURIComponent(`${title} ${artist}`.slice(0, 60));
-    const res = await fetch(`${SAAVN}/api/search/songs?query=${q}&limit=5`);
-    if (!res.ok) throw new Error(`Saavn search ${res.status}`);
+    const { cleanTitle: t, cleanArtist: a } = cleanTitle(title, artist);
+    const query = `${t} ${a}`.trim();
+    console.log(`🔍 Saavn searching: "${query}"`);
+
+    const res = await fetch(`${SAAVN}/api/search/songs?query=${encodeURIComponent(query)}&limit=5`);
+    if (!res.ok) throw new Error(`Saavn HTTP ${res.status}`);
     const data = await res.json();
-    const songs = data?.data?.results || [];
-    if (!songs.length) throw new Error("No results");
 
-    // Pick best match — first result is usually correct
+    // Handle both response structures
+    const songs = data?.data?.results || data?.results || [];
+    if (!songs.length) {
+      // Try with just the title, no artist
+      const res2 = await fetch(`${SAAVN}/api/search/songs?query=${encodeURIComponent(t)}&limit=5`);
+      const data2 = await res2.json();
+      const songs2 = data2?.data?.results || data2?.results || [];
+      if (!songs2.length) throw new Error("No results");
+      songs.push(...songs2);
+    }
+
     const song = songs[0];
-
-    // downloadUrl is array sorted by quality — pick highest (320kbps)
-    const urls = song.downloadUrl || [];
+    const urls = song.downloadUrl || song.download_url || [];
     const best = urls.find(u => u.quality === "320kbps") ||
                  urls.find(u => u.quality === "160kbps") ||
                  urls[urls.length - 1];
 
-    if (!best?.url) throw new Error("No download URL");
-    console.log(`✅ Saavn match: "${song.name}" quality: ${best.quality}`);
-    return { url: best.url, quality: best.quality, saavnId: song.id };
+    if (!best?.url) throw new Error("No download URL in response");
+    console.log(`✅ Saavn: "${song.name}" @ ${best.quality}`);
+    return { url: best.url, quality: best.quality };
   } catch (err) {
     console.warn("Saavn lookup failed:", err.message);
     return null;
@@ -94,9 +122,46 @@ const initAudioEl = () => {
     // Mute IFrame when native audio is playing
     window._ytPlayerA?.setVolume?.(0);
     window._ytPlayerB?.setVolume?.(0);
+
+    // ── Set Media Session here — this is what shows lock screen controls ──
+    const song = usePlayerStore.getState().currentSong;
+    if ("mediaSession" in navigator && song) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: song.title,
+        artist: song.artist,
+        artwork: [
+          { src: song.thumbnail, sizes: "480x360", type: "image/jpeg" },
+          { src: song.thumbnail.replace("hqdefault", "maxresdefault"), sizes: "1280x720", type: "image/jpeg" },
+        ],
+      });
+      navigator.mediaSession.playbackState = "playing";
+      navigator.mediaSession.setActionHandler("play", () => {
+        window._audioEl?.play();
+        usePlayerStore.getState().setIsPlaying(true);
+      });
+      navigator.mediaSession.setActionHandler("pause", () => {
+        window._audioEl?.pause();
+        usePlayerStore.getState().setIsPlaying(false);
+      });
+      navigator.mediaSession.setActionHandler("nexttrack", () => {
+        usePlayerStore.getState().nextSong();
+      });
+      navigator.mediaSession.setActionHandler("previoustrack", () => {
+        usePlayerStore.getState().prevSong();
+      });
+      navigator.mediaSession.setActionHandler("seekto", (e) => {
+        if (window._audioEl) window._audioEl.currentTime = e.seekTime;
+        usePlayerStore.getState().setProgress(e.seekTime);
+      });
+      console.log("✅ Media Session set for:", song.title);
+    }
   });
+
   el.addEventListener("pause", () => {
-    if (window._saavnActive) usePlayerStore.getState().setIsPlaying(false);
+    if (window._saavnActive) {
+      usePlayerStore.getState().setIsPlaying(false);
+      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
+    }
   });
 
   window._audioEl = el;
