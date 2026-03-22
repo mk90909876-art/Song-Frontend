@@ -85,20 +85,20 @@ export const usePlayerStore = create((set, get) => ({
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     if (!isMobile) return;
 
-    try {
-      const workerUrl = import.meta.env.VITE_STREAM_WORKER_URL;
-      if (!workerUrl) throw new Error("No worker URL configured");
+    const workerUrl = import.meta.env.VITE_STREAM_WORKER_URL;
+    if (!workerUrl) return;
 
-      const res = await fetch(`${workerUrl}?v=${song.id}`, {
-        headers: { "X-Stream-Token": import.meta.env.VITE_STREAM_TOKEN || "" },
-      });
-      const data = await res.json();
-      if (!data.url) throw new Error(data.error || "No stream URL");
+    try {
+      // Point audio src directly at Worker — Worker proxies YouTube bytes
+      // This means audio comes from YOUR domain → no CORS → OS keeps it alive in background
+      const token = import.meta.env.VITE_STREAM_TOKEN || "";
+      const streamUrl = `${workerUrl}?v=${song.id}`;
 
       if (!window._audioEl) {
         window._audioEl = new Audio();
         window._audioEl.setAttribute("playsinline", "true");
         window._audioEl.setAttribute("webkit-playsinline", "true");
+        window._audioEl.crossOrigin = "anonymous";
         window._audioEl.addEventListener("timeupdate", () => {
           usePlayerStore.getState().setProgress(window._audioEl.currentTime);
         });
@@ -108,8 +108,8 @@ export const usePlayerStore = create((set, get) => ({
         window._audioEl.addEventListener("ended", () => {
           usePlayerStore.getState().nextSong();
         });
-        window._audioEl.addEventListener("error", () => {
-          console.warn("Native audio error, falling back to IFrame");
+        window._audioEl.addEventListener("error", (e) => {
+          console.warn("Native audio error, falling back to IFrame:", e);
           window._audioEl = null;
           const vol = usePlayerStore.getState().volume;
           window._ytPlayerA?.setVolume?.(vol * 100);
@@ -117,19 +117,26 @@ export const usePlayerStore = create((set, get) => ({
       }
 
       const savedPos = usePlayerStore.getState().savedProgress;
-      window._audioEl.src = data.url;
+
+      // Set src — Worker handles auth via query param to avoid CORS preflight
+      window._audioEl.src = token ? `${streamUrl}&t=${token}` : streamUrl;
       window._audioEl.volume = usePlayerStore.getState().volume;
       window._audioEl.load();
       await window._audioEl.play();
+
       if (savedPos > 3) window._audioEl.currentTime = savedPos;
+
+      // Mute IFrame — native audio handles everything on mobile
       window._ytPlayerA?.setVolume?.(0);
       window._ytPlayerB?.setVolume?.(0);
-      console.log("Native audio playing:", song.title, data.mimeType);
+      console.log("✅ Native audio playing (proxied):", song.title);
     } catch (err) {
-      console.warn("Native audio failed, IFrame only:", err.message);
+      console.warn("Native audio failed, IFrame fallback:", err.message);
       window._audioEl = null;
     }
   },
+
+
 
 
   playSong: (song) => {
