@@ -585,7 +585,7 @@ export default function Player() {
             <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", flexShrink: 0 }} />
 
             {/* Queue list */}
-            <div style={{ flex: 1, minHeight: 0, padding: "8px 16px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <div style={{ flex: 1, minHeight: 0, padding: "8px 16px", display: "flex", flexDirection: "column", overflow: "visible" }}>
               <DraggableQueue queue={queue} removeFromQueue={removeFromQueue} moveQueueItem={moveQueueItem} playFromQueue={(i) => { playFromQueue(i); setShowQueue(false); }} />
             </div>
           </div>

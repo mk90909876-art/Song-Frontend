@@ -142,11 +142,12 @@ export default function SearchPage() {
   const [searched, setSearched] = useState(false);
   const [activeTab, setActiveTab] = useState("Songs");
   const debounceRef = useRef(null);
-  const { playSong } = usePlayerStore();
+  const { playSong, searchHistory, addSearchHistory, removeSearchHistory, clearSearchHistory } = usePlayerStore();
 
   const search = async (q, tab = activeTab) => {
     if (!q.trim()) { setResults({ songs: [], artists: [], playlists: [] }); setSearched(false); return; }
     setLoading(true);
+    addSearchHistory(q.trim());
     try {
       if (tab === "Playlists") {
         const { data } = await api.get(`/api/music/playlist-search?q=${encodeURIComponent(q)}`);
@@ -257,9 +258,31 @@ export default function SearchPage() {
       )}
 
       {!searched && !loading && (
-        <div style={{ color: "var(--text-muted)", marginTop: "40px", textAlign: "center" }}>
-          <div style={{ fontSize: "48px", marginBottom: "12px" }}>♪</div>
-          <p>Search for any song, artist or playlist</p>
+        <div>
+          {searchHistory.length > 0 ? (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.06em" }}>RECENT SEARCHES</span>
+                <button onClick={clearSearchHistory} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: "12px", cursor: "pointer" }}>Clear all</button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                {searchHistory.map(h => (
+                  <div key={h} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "8px", cursor: "pointer", transition: "background 0.15s" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "var(--bg-elevated)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <span style={{ fontSize: "16px", color: "var(--text-muted)" }}>↺</span>
+                    <span onClick={() => { setQuery(h); search(h, activeTab); }} style={{ flex: 1, fontSize: "14px" }}>{h}</span>
+                    <button onClick={() => removeSearchHistory(h)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "16px", padding: "2px 6px" }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{ color: "var(--text-muted)", marginTop: "40px", textAlign: "center" }}>
+              <div style={{ fontSize: "48px", marginBottom: "12px" }}>♪</div>
+              <p>Search for any song, artist or playlist</p>
+            </div>
+          )}
         </div>
       )}
     </div>
