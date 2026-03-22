@@ -59,30 +59,36 @@ const isNoise = (str) => {
   return words.length > 0 && words.every(w => NOISE_WORDS.includes(w) || /^\d{4}$/.test(w));
 };
 
+// Has commas suggesting a list of artists "TALWIINDER, NDS, RIPPY"
+const looksLikeArtistList = (str) => str.includes(",");
+
 // ── Title cleaner — handles ALL YouTube title patterns ────────
 const cleanForSearch = (ytTitle, ytArtist) => {
-  let raw = (ytTitle || "").replace(/@\w+/g, "").trim();
+  let raw = (ytTitle || "").replace(/@\S+/g, "").trim();
 
   // Remove everything after first |
   raw = raw.split("|")[0].trim();
 
-  // Remove noise parentheses: (Official Video), (Full Song), (4K HD), etc.
+  // Remove noise parentheses: (Official Video), (Full Song), (4K HD) etc.
   raw = raw.replace(/\(([^)]*)\)/gi, (match, inner) => {
     return NOISE_WORDS.some(n => inner.toLowerCase().includes(n)) ? "" : match;
   });
 
-  // Remove brackets entirely
+  // Remove square brackets entirely
   raw = raw.replace(/\[.*?\]/g, "").trim();
 
-  // Remove feat/ft/with and beyond
-  raw = raw.replace(/\s+(feat\.|ft\.|featuring|with\s)\s*.*/gi, "").trim();
+  // Remove feat/ft/with and everything after
+  raw = raw.replace(/\s+(feat\.|ft\.|featuring)\s*.*/gi, "").trim();
 
-  // Handle colon: "Dil: Shreya's Version" → "Dil" only if right side is noise
+  // Handle colon subtitle: "Dil: Shreya's Version" → "Dil"
+  // "Raghav's Version : Ek Villain Returns" → strip from colon
   if (raw.includes(":")) {
-    const [left, ...rest] = raw.split(":");
-    const right = rest.join(":").trim();
-    if (NOISE_WORDS.some(n => right.toLowerCase().includes(n)) ||
-        /version|mix|flip|cover/i.test(right)) {
+    const colonIdx = raw.indexOf(":");
+    const left = raw.slice(0, colonIdx).trim();
+    const right = raw.slice(colonIdx + 1).trim();
+    // Strip if right side has noise words or version/mix keywords
+    if (NOISE_WORDS.some(n => right.toLowerCase().split(/\s+/).includes(n)) ||
+        /version|mix|flip|cover|returns|rewind/i.test(right)) {
       raw = left.trim();
     }
   }
@@ -90,19 +96,25 @@ const cleanForSearch = (ytTitle, ytArtist) => {
   let songTitle = raw;
   let extractedArtist = "";
 
-  // Handle "A - B" pattern
+  // Handle "A - B" pattern — determine which side is song vs artist
   if (raw.includes(" - ")) {
     const dashIdx = raw.indexOf(" - ");
     const left = raw.slice(0, dashIdx).trim();
     const right = raw.slice(dashIdx + 3).trim();
     const leftWords = left.split(/\s+/).length;
     const rightIsNoise = isNoise(right);
+    const rightIsArtistList = looksLikeArtistList(right);
 
     if (rightIsNoise) {
-      // "Song - Official Video" → song = left
+      // "Song - Official Video" → song only
       songTitle = left;
+    } else if (rightIsArtistList) {
+      // "HASEEN - TALWIINDER, NDS, RIPPY" → song=left, artists=right (ignore)
+      songTitle = left;
+      // first of the artist list
+      extractedArtist = right.split(",")[0].trim();
     } else if (leftWords <= 4 && !isNoise(left)) {
-      // "Artist Name - Song Title" → artist = left, song = right
+      // "Aditya Rikhari - Paaro" → artist=left, song=right
       extractedArtist = left;
       songTitle = right;
     } else {
@@ -110,30 +122,27 @@ const cleanForSearch = (ytTitle, ytArtist) => {
     }
   }
 
-  // Final cleanup of song title
+  // Final cleanup
   songTitle = songTitle.replace(/[-:]\s*$/, "").replace(/\s+/g, " ").trim();
 
   // Determine final artist
-  let cleanArtist = (ytArtist || "")
-    .split(/[,&]/)[0]
-    .replace(/@\w+/g, "")
-    .replace(/vevo/gi, "")
-    .trim();
+  let cleanArtist = (ytArtist || "").split(/[,&]/)[0].replace(/@\S+/g, "").replace(/vevo/gi, "").trim();
 
-  // Prefer extracted artist over channel names
-  if (isNoise(cleanArtist) && extractedArtist) {
+  if (isNoise(cleanArtist)) {
+    // ytArtist is a channel name — use what we extracted from title
     cleanArtist = extractedArtist;
   } else if (extractedArtist && !isNoise(extractedArtist)) {
+    // Extracted artist from title is more reliable than ytArtist
     cleanArtist = extractedArtist;
   }
 
-  console.log(`🧹 Clean: "${ytTitle}" → title="${songTitle}" artist="${cleanArtist}"`);
-
+  console.log(`🧹 "${ytTitle}" → title="${songTitle}" artist="${cleanArtist}"`);
   return {
     title: songTitle.slice(0, 60).trim(),
     artist: cleanArtist.slice(0, 40).trim(),
   };
 };
+
 
 
 // ── Saavn search + match ──────────────────────────────────────
@@ -172,9 +181,10 @@ const findSaavnSong = async (song) => {
           return Math.abs(sd - ytDur) < Math.abs(bd - ytDur) ? s : b;
         });
         const diff = Math.abs((Number(best.duration) || 0) - ytDur);
-        console.log(`  → Best: "${best.name}" diff=${diff}s`);
-        if (diff > 45) {
-          console.warn(`  ⚠️ Too different (${diff}s), trying next query`);
+        console.log(`  → Best: "${best.name}" dur=${best.duration}s diff=${diff}s`);
+        // Only reject if clearly wrong — 60s tolerance
+        if (diff > 60) {
+          console.warn(`  ⚠️ All too far (${diff}s), trying next query`);
           continue;
         }
       } else {
