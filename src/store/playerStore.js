@@ -66,7 +66,7 @@ const looksLikeArtistList = (str) => str.includes(",");
 const isAllCaps = (str) => str.length > 1 && str === str.toUpperCase() && /[A-Z]/.test(str);
 
 // Patterns that mean "what comes AFTER the colon is the real title"
-const COLON_LEFT_IS_NOISE = /^(full\s+video|full\s+song|official\s+video|lyrical?\s+video|audio\s+song|title\s+track|title\s+song)/i;
+const COLON_LEFT_IS_NOISE = /^(full\s+video|full\s+song|official\s+video|lyrical?|audio\s+song|title\s+track|title\s+song)/i;
 
 // ── Title cleaner — handles ALL YouTube title patterns ────────
 const cleanForSearch = (ytTitle, ytArtist) => {
@@ -77,18 +77,37 @@ const cleanForSearch = (ytTitle, ytArtist) => {
     .replace(/@\S+/g, "")
     .trim();
 
-  // "Arijit Singh | Song Name" — if left of | looks like a single person name (no noise), swap
-  if (raw.includes("|")) {
-    const parts = raw.split("|").map(p => p.trim());
-    const left = parts[0];
-    const right = parts.slice(1).join("|").trim();
-    const leftWords = left.split(/\s+/).length;
-    // If left is 1-3 words and right has more content, left is likely the artist
-    if (leftWords <= 3 && right.length > left.length && !isNoise(left)) {
+  // Strip "Title Song/Track" suffix early so it doesn't confuse | logic
+  raw = raw.replace(/\s+(title\s+song|title\s+track)\b/gi, "").trim();
+
+  // Strip "Song By / Sung By [artist]" pattern
+  raw = raw.replace(/\s+(song|sung)\s+by\s+.*/gi, "").trim();
+
+  // Handle colon BEFORE pipe — so "Full Video: Raanjhan | ..." becomes "Raanjhan | ..."
+  if (raw.includes(":")) {
+    const colonIdx = raw.indexOf(":");
+    const left = raw.slice(0, colonIdx).trim();
+    const right = raw.slice(colonIdx + 1).trim();
+    if (COLON_LEFT_IS_NOISE.test(left)) {
       raw = right;
     } else {
-      raw = left;
+      raw = left.trim();
     }
+  }
+
+  // Handle pipe: "KK | Dil Ibaadat | ..." or "Arijit Singh | Song | ..."
+  // Only swap left→right if left looks like an artist name:
+  //   - 2 words, no noise words (e.g. "Arijit Singh")
+  //   - OR 1 word that is very short initials ≤ 3 chars (e.g. "KK", "AR")
+  if (raw.includes("|")) {
+    const segments = raw.split("|").map(s => s.trim()).filter(Boolean);
+    const first = segments[0];
+    const firstWords = first.split(/\s+/);
+    const firstHasNoise = firstWords.some(w => NOISE_WORDS.has(w.toLowerCase()));
+    const firstIsArtist =
+      (firstWords.length === 2 && !firstHasNoise) ||
+      (firstWords.length === 1 && first.length <= 3 && !firstHasNoise);
+    raw = firstIsArtist ? segments[1] || first : first;
   }
 
   // Remove noise parentheses: (Official Video), (Full Song), (4K HD) etc.
@@ -103,22 +122,7 @@ const cleanForSearch = (ytTitle, ytArtist) => {
   // Remove feat/ft/with and everything after
   raw = raw.replace(/\s+(feat\.|ft\.|featuring)\s*.*/gi, "").trim();
 
-  // Strip "Title Song", "Title Track" suffix
-  raw = raw.replace(/\s+(title\s+song|title\s+track)\b/gi, "").trim();
-
-  // Handle colon
-  if (raw.includes(":")) {
-    const colonIdx = raw.indexOf(":");
-    const left = raw.slice(0, colonIdx).trim();
-    const right = raw.slice(colonIdx + 1).trim();
-    if (COLON_LEFT_IS_NOISE.test(left)) {
-      raw = right;
-    } else {
-      raw = left.trim();
-    }
-  }
-
-  // Normalise dashes — handle no-space dash: "-Official", "-Lyric" etc.
+  // Normalise no-space dash: "-Official", "-Lyric" etc. → " - Official"
   raw = raw.replace(/\s*-(?=[A-Z])/g, " - ");
 
   let songTitle = raw;
@@ -126,12 +130,11 @@ const cleanForSearch = (ytTitle, ytArtist) => {
 
   // Handle "A - B" pattern
   if (raw.includes(" - ")) {
-    // Use only the FIRST dash to split
     const dashIdx = raw.indexOf(" - ");
     const left = raw.slice(0, dashIdx).trim();
     const right = raw.slice(dashIdx + 3).trim();
 
-    // Strip any remaining "- noise" suffixes from right recursively
+    // Strip any remaining "- noise" suffix from right
     const stripNoiseSuffix = (s) => s.replace(/\s+-\s+\S.*$/, "").trim();
     const cleanRight = stripNoiseSuffix(right);
 
@@ -143,19 +146,15 @@ const cleanForSearch = (ytTitle, ytArtist) => {
     if (rightIsNoise) {
       songTitle = left;
     } else if (leftIsArtistList) {
-      // "TALWIINDER, NDS - Song" → song is on right
       songTitle = cleanRight;
       extractedArtist = left.split(",")[0].trim();
     } else if (rightIsArtistList) {
-      // "HASEEN - TALWIINDER, NDS, RIPPY" → song=left
       songTitle = left;
       extractedArtist = cleanRight.split(",")[0].trim();
     } else if (leftWords <= 3 && !isNoise(left) && !isAllCaps(left)) {
-      // "Aditya Rikhari - Paaro" → artist=left, song=right
       extractedArtist = left;
       songTitle = cleanRight;
     } else {
-      // Default: left is song
       songTitle = left;
     }
   }
