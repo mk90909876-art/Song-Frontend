@@ -1,10 +1,10 @@
 import { create } from "zustand";
+import { saavnToSong, SAAVN } from "../utils/saavn";
 
 const MAX_HISTORY = 50;
 const MAX_SEARCH_HISTORY = 20;
 const QUEUE_MAX = 20;
 const QUEUE_REFILL_AT = 10;
-const SAAVN = "https://jiosaavn-api.mk90909876.workers.dev";
 
 // ── Session persistence ───────────────────────────────────────
 const saveSession = (state) => {
@@ -277,11 +277,8 @@ const findSaavnSong = async (song) => {
     return null;
   }
 
-  // Force HTTPS — some Saavn CDN URLs return http:// which is mixed content
-  // on HTTPS PWAs. Audio still plays but Media Session won't activate.
-  const secureUrl = audio.url.replace(/^http:\/\//i, "https://");
   console.log(`✅ Saavn: "${globalBest.name}" score=${globalBestScore.toFixed(2)} @ ${audio.quality}`);
-  return { url: secureUrl, quality: audio.quality, name: globalBest.name };
+  return { url: audio.url, quality: audio.quality, name: globalBest.name };
 };
 
 // ── Single Audio Element ──────────────────────────────────────
@@ -334,7 +331,6 @@ const getAudio = () => {
       usePlayerStore.getState().setIsPlaying(true);
       const song = usePlayerStore.getState().currentSong;
       if (song) setMediaSession(song);
-      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
     });
 
     el.addEventListener("pause", () => {
@@ -383,12 +379,10 @@ const setMediaSession = (song) => {
       artist: song.artist,
       artwork: [
         { src: song.thumbnail, sizes: "480x360", type: "image/jpeg" },
-        { src: song.thumbnail.replace("hqdefault", "mqdefault"), sizes: "320x180", type: "image/jpeg" },
+        { src: song.thumbnail.replace("hqdefault", "maxresdefault"), sizes: "1280x720", type: "image/jpeg" },
       ],
     });
-    // Only set "playing" if audio is actually playing
-    const el2 = window._audioEl;
-    navigator.mediaSession.playbackState = (el2 && !el2.paused) ? "playing" : "paused";
+    navigator.mediaSession.playbackState = "playing";
 
     // Position state shows seek bar in notification
     try {
@@ -459,42 +453,54 @@ export const usePlayerStore = create((set, get) => ({
     set({ currentSong: song, isPlaying: false, progress: 0, duration: 0, history: newHistory, savedProgress: 0, queue: newQueue, saavnUnavailable: false });
     saveSession({ currentSong: song, queue: newQueue, progress: 0 });
 
+    // Set media session immediately with song info (even before audio loads)
+    setMediaSession(song);
+
     const el = getAudio();
+    el.pause();
     el.volume = get().volume;
 
     // Tag this load so we can detect stale responses
     const loadId = ++_currentLoadId;
 
-    findSaavnSong(song).then(result => {
-      // Stale — user already moved to another song
-      if (loadId !== _currentLoadId) {
-        console.log("Stale Saavn response, ignoring");
-        return;
-      }
-
-      if (!result) {
-        set({ saavnUnavailable: true, isPlaying: false });
-        return;
-      }
-
-      const savedPos = get().savedProgress;
-      el.src = result.url;
+    const playAudio = (url, savedPos) => {
+      el.src = url;
       el.load();
       el.play()
-        .then(() => {
-          if (savedPos > 3) el.currentTime = savedPos;
-        })
+        .then(() => { if (savedPos > 3) el.currentTime = savedPos; })
         .catch(err => {
-          // iOS blocks autoplay — will resume on next tap
           console.warn("Autoplay blocked:", err.message);
           window._pendingPlay = true;
           set({ isPlaying: false });
         });
-    });
+    };
+
+    if (song.source === "saavn") {
+      // Saavn-sourced song — play directly, no matching needed
+      const urls = song.downloadUrl || [];
+      const audio = urls.find(u => u.quality === "320kbps")
+        || urls.find(u => u.quality === "160kbps")
+        || urls[urls.length - 1];
+      if (!audio?.url) {
+        set({ saavnUnavailable: true, isPlaying: false });
+      } else {
+        playAudio(audio.url, get().savedProgress);
+      }
+    } else {
+      // YouTube-sourced song — find matching Saavn track
+      findSaavnSong(song).then(result => {
+        if (loadId !== _currentLoadId) { console.log("Stale Saavn response, ignoring"); return; }
+        if (!result) { set({ saavnUnavailable: true, isPlaying: false }); return; }
+        playAudio(result.url, get().savedProgress);
+      });
+    }
 
     // Auto queue refill
     if (autoQueue && newQueue.filter(s => s.id !== song.id).length < QUEUE_REFILL_AT) {
-      setTimeout(() => get().fetchMix(song), 3000);
+      setTimeout(() => {
+        if (song.source === "saavn") get().fetchSuggestions(song);
+        else get().fetchMix(song);
+      }, 3000);
     }
   },
 
@@ -515,6 +521,26 @@ export const usePlayerStore = create((set, get) => ({
         saveSession({ currentSong: get().currentSong, queue: updated, progress: get().progress });
       }
     } catch (e) { console.error("fetchMix:", e); }
+  },
+
+  fetchSuggestions: async (song) => {
+    try {
+      const { queue, currentSong, history } = get();
+      if (queue.length >= QUEUE_MAX) return;
+      const res = await fetch(`${SAAVN}/api/songs/${song.id}/suggestions?limit=20`);
+      const data = await res.json();
+      if (!data.success || !data.data?.length) return;
+      const ids = new Set([...queue.map(s => s.id), currentSong?.id, ...history.slice(0, 10).map(s => s.id)]);
+      const fresh = data.data
+        .map(saavnToSong)
+        .filter(s => !ids.has(s.id))
+        .slice(0, QUEUE_MAX - queue.length);
+      if (fresh.length) {
+        const updated = [...get().queue, ...fresh];
+        set({ queue: updated });
+        saveSession({ currentSong: get().currentSong, queue: updated, progress: get().progress });
+      }
+    } catch (e) { console.error("fetchSuggestions:", e); }
   },
 
   nextSong: () => {
