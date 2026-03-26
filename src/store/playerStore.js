@@ -292,7 +292,6 @@ let _currentLoadId = 0;
 const getAudio = () => {
   if (!window._audioEl) {
     const el = new Audio();
-    el.crossOrigin = "anonymous";
     el.setAttribute("playsinline", "true");
     el.setAttribute("webkit-playsinline", "true");
     el.preload = "auto";
@@ -335,6 +334,7 @@ const getAudio = () => {
       usePlayerStore.getState().setIsPlaying(true);
       const song = usePlayerStore.getState().currentSong;
       if (song) setMediaSession(song);
+      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
     });
 
     el.addEventListener("pause", () => {
@@ -480,15 +480,9 @@ export const usePlayerStore = create((set, get) => ({
       const savedPos = get().savedProgress;
       el.src = result.url;
       el.load();
-
-      // Set media session metadata AFTER src is set, BEFORE play
-      setMediaSession(song);
-
       el.play()
         .then(() => {
           if (savedPos > 3) el.currentTime = savedPos;
-          // Re-set media session after play succeeds to ensure notification shows
-          setMediaSession(song);
         })
         .catch(err => {
           // iOS blocks autoplay — will resume on next tap
