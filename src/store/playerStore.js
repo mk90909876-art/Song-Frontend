@@ -34,14 +34,17 @@ const session = loadSession();
 
 // ── YouTube channel names that are useless for Saavn search ──
 // ── Noise words in YouTube titles ────────────────────────────
-const NOISE_WORDS = [
-  "official","video","audio","lyric","lyrics","full","song","music",
+const NOISE_WORDS = new Set([
+  "official","video","audio","lyric","lyrics","lyrical","full","song","music",
   "hd","4k","8k","visualizer","visualiser","animation","animated",
   "unplugged","live","acoustic","remix","remaster","remastered",
   "extended","version","original","promo","teaser","trailer",
   "making","behind","scenes","bonus","track","new","latest",
-  "2020","2021","2022","2023","2024","2025",
-];
+  "2020","2021","2022","2023","2024","2025","2026",
+]);
+
+// Inline uppercase noise phrases to strip after all other processing
+const INLINE_NOISE_RE = /\b(FULL\s+VIDEO\s+SONG|FULL\s+VIDEO|FULL\s+SONG|FULL\s+AUDIO|LYRIC\s+VIDEO|OFFICIAL\s+VIDEO|OFFICIAL\s+AUDIO|MUSIC\s+VIDEO)\b/g;
 
 const CHANNEL_NAMES = [
   "t-series","tseries","sony music","zee music","tips official","tips films",
@@ -56,25 +59,42 @@ const isNoise = (str) => {
   if (!s) return true;
   if (CHANNEL_NAMES.some(c => s.includes(c))) return true;
   const words = s.split(/\s+/);
-  return words.length > 0 && words.every(w => NOISE_WORDS.includes(w) || /^\d{4}$/.test(w));
+  return words.length > 0 && words.every(w => NOISE_WORDS.has(w) || /^\d{4}$/.test(w));
 };
 
-// Has commas suggesting a list of artists "TALWIINDER, NDS, RIPPY"
 const looksLikeArtistList = (str) => str.includes(",");
+const isAllCaps = (str) => str.length > 1 && str === str.toUpperCase() && /[A-Z]/.test(str);
 
 // Patterns that mean "what comes AFTER the colon is the real title"
 const COLON_LEFT_IS_NOISE = /^(full\s+video|full\s+song|official\s+video|lyrical?\s+video|audio\s+song|title\s+track|title\s+song)/i;
 
 // ── Title cleaner — handles ALL YouTube title patterns ────────
 const cleanForSearch = (ytTitle, ytArtist) => {
-  let raw = (ytTitle || "").replace(/@\S+/g, "").trim();
+  // Normalise smart/curly quotes to straight
+  let raw = (ytTitle || "")
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/@\S+/g, "")
+    .trim();
 
-  // Remove everything after first |
-  raw = raw.split("|")[0].trim();
+  // "Arijit Singh | Song Name" — if left of | looks like a single person name (no noise), swap
+  if (raw.includes("|")) {
+    const parts = raw.split("|").map(p => p.trim());
+    const left = parts[0];
+    const right = parts.slice(1).join("|").trim();
+    const leftWords = left.split(/\s+/).length;
+    // If left is 1-3 words and right has more content, left is likely the artist
+    if (leftWords <= 3 && right.length > left.length && !isNoise(left)) {
+      raw = right;
+    } else {
+      raw = left;
+    }
+  }
 
   // Remove noise parentheses: (Official Video), (Full Song), (4K HD) etc.
   raw = raw.replace(/\(([^)]*)\)/gi, (match, inner) => {
-    return NOISE_WORDS.some(n => inner.toLowerCase().includes(n)) ? "" : match;
+    const low = inner.toLowerCase();
+    return [...NOISE_WORDS].some(n => low.includes(n)) ? "" : match;
   });
 
   // Remove square brackets entirely
@@ -91,48 +111,57 @@ const cleanForSearch = (ytTitle, ytArtist) => {
     const colonIdx = raw.indexOf(":");
     const left = raw.slice(0, colonIdx).trim();
     const right = raw.slice(colonIdx + 1).trim();
-
     if (COLON_LEFT_IS_NOISE.test(left)) {
-      // "Full Video: Raanjhan" → use right side
       raw = right;
     } else {
-      // "Dost Banke : Gurnazar" or "Dil: Shreya's Version" → always strip colon and beyond
-      // The part after colon is always either noise or artist name (already in ytArtist)
       raw = left.trim();
     }
   }
 
+  // Normalise dashes — handle no-space dash: "-Official", "-Lyric" etc.
+  raw = raw.replace(/\s*-(?=[A-Z])/g, " - ");
+
   let songTitle = raw;
   let extractedArtist = "";
 
-  // Handle "A - B" pattern — determine which side is song vs artist
+  // Handle "A - B" pattern
   if (raw.includes(" - ")) {
+    // Use only the FIRST dash to split
     const dashIdx = raw.indexOf(" - ");
     const left = raw.slice(0, dashIdx).trim();
     const right = raw.slice(dashIdx + 3).trim();
+
+    // Strip any remaining "- noise" suffixes from right recursively
+    const stripNoiseSuffix = (s) => s.replace(/\s+-\s+\S.*$/, "").trim();
+    const cleanRight = stripNoiseSuffix(right);
+
+    const rightIsNoise = isNoise(cleanRight);
+    const leftIsArtistList = looksLikeArtistList(left);
+    const rightIsArtistList = looksLikeArtistList(cleanRight);
     const leftWords = left.split(/\s+/).length;
-    const rightIsNoise = isNoise(right);
-    const rightIsArtistList = looksLikeArtistList(right);
 
     if (rightIsNoise) {
-      // "Song - Official Video" → song only
       songTitle = left;
+    } else if (leftIsArtistList) {
+      // "TALWIINDER, NDS - Song" → song is on right
+      songTitle = cleanRight;
+      extractedArtist = left.split(",")[0].trim();
     } else if (rightIsArtistList) {
-      // "HASEEN - TALWIINDER, NDS, RIPPY" → song=left, first artist from right
+      // "HASEEN - TALWIINDER, NDS, RIPPY" → song=left
       songTitle = left;
-      extractedArtist = right.split(",")[0].trim();
-    } else if (leftWords <= 4 && !isNoise(left) && left === left.toUpperCase() === false) {
+      extractedArtist = cleanRight.split(",")[0].trim();
+    } else if (leftWords <= 3 && !isNoise(left) && !isAllCaps(left)) {
       // "Aditya Rikhari - Paaro" → artist=left, song=right
-      // Extra check: if left is ALL CAPS it's more likely the song (e.g. "DEEWANIYAT")
       extractedArtist = left;
-      songTitle = right;
-    } else if (isNoise(right)) {
-      songTitle = left;
+      songTitle = cleanRight;
     } else {
-      // Default: left is song (covers "DEEWANIYAT - Ek Deewane Ki...")
+      // Default: left is song
       songTitle = left;
     }
   }
+
+  // Strip inline uppercase noise phrases: "FULL VIDEO SONG" etc.
+  songTitle = songTitle.replace(INLINE_NOISE_RE, "").trim();
 
   // Final cleanup
   songTitle = songTitle.replace(/[-:]\s*$/, "").replace(/\s+/g, " ").trim();
@@ -141,10 +170,8 @@ const cleanForSearch = (ytTitle, ytArtist) => {
   let cleanArtist = (ytArtist || "").split(/[,&]/)[0].replace(/@\S+/g, "").replace(/vevo/gi, "").trim();
 
   if (isNoise(cleanArtist)) {
-    // ytArtist is a channel name — use what we extracted from title
     cleanArtist = extractedArtist;
   } else if (extractedArtist && !isNoise(extractedArtist)) {
-    // Extracted artist from title is more reliable than ytArtist
     cleanArtist = extractedArtist;
   }
 
@@ -155,12 +182,52 @@ const cleanForSearch = (ytTitle, ytArtist) => {
   };
 };
 
+// ── Scoring helpers ───────────────────────────────────────────
 
+// Normalise a string for comparison: lowercase, strip punctuation, split to word set
+const tokenize = (str) =>
+  new Set((str || "").toLowerCase().replace(/[^\w\s]/g, " ").split(/\s+/).filter(Boolean));
 
-// ── Saavn search + match ──────────────────────────────────────
+// Jaccard similarity between two word sets
+const jaccard = (a, b) => {
+  if (!a.size || !b.size) return 0;
+  let intersection = 0;
+  a.forEach(w => { if (b.has(w)) intersection++; });
+  return intersection / (a.size + b.size - intersection);
+};
+
+// Duration score: 1.0 at 0s diff, linear decay, 0 at 90s diff
+const durationScore = (saavnDur, ytDur) => {
+  if (!ytDur || !saavnDur) return 0.5; // no duration info — neutral
+  const diff = Math.abs(Number(saavnDur) - ytDur);
+  return Math.max(0, 1 - diff / 90);
+};
+
+// Score a single Saavn result against our target
+const scoreSaavnResult = (saavnSong, cleanTitle, cleanArtist, ytDur) => {
+  const titleTokens = tokenize(cleanTitle);
+  const artistTokens = tokenize(cleanArtist);
+
+  const saavnTitleTokens = tokenize(saavnSong.name);
+  const saavnArtistStr = saavnSong.artists?.primary?.map(a => a.name).join(" ")
+    || saavnSong.primaryArtists
+    || saavnSong.more_info?.artistMap?.primary_artists?.map(a => a.name).join(" ")
+    || "";
+  const saavnArtistTokens = tokenize(saavnArtistStr);
+
+  const nameSim = jaccard(titleTokens, saavnTitleTokens);
+  const artistSim = jaccard(artistTokens, saavnArtistTokens);
+  const durSim = durationScore(saavnSong.duration, ytDur);
+
+  const score = nameSim * 0.50 + durSim * 0.35 + artistSim * 0.15;
+
+  return { score, nameSim, artistSim, durSim };
+};
+
+// ── Saavn search + scored match ───────────────────────────────
 const findSaavnSong = async (song) => {
   const { title: ct, artist: ca } = cleanForSearch(song.title, song.artist);
-  const ytDur = song.duration || 0; // seconds from yt-dlp search results
+  const ytDur = song.duration || 0;
   console.log(`🎵 Looking for: "${ct}" by "${ca}" (${ytDur}s)`);
 
   const queries = [
@@ -168,6 +235,9 @@ const findSaavnSong = async (song) => {
     ct,
     `${ct} ${ca.split(" ")[0]}`.trim(),
   ].filter((q, i, arr) => q.length > 1 && arr.indexOf(q) === i);
+
+  let globalBest = null;
+  let globalBestScore = -1;
 
   for (const q of queries) {
     try {
@@ -179,45 +249,37 @@ const findSaavnSong = async (song) => {
         .filter(s => s.downloadUrl?.length > 0);
       if (!results.length) continue;
 
-      // Log all candidates
-      results.forEach((s, i) => {
-        console.log(`  [${i}] "${s.name}" dur=${s.duration}s`);
-      });
-
-      let best;
-      if (ytDur > 0) {
-        // Pick closest duration match
-        best = results.reduce((b, s) => {
-          const sd = Number(s.duration) || 0;
-          const bd = Number(b.duration) || 0;
-          return Math.abs(sd - ytDur) < Math.abs(bd - ytDur) ? s : b;
-        });
-        const diff = Math.abs((Number(best.duration) || 0) - ytDur);
-        console.log(`  → Best: "${best.name}" dur=${best.duration}s diff=${diff}s`);
-        // Only reject if clearly wrong — 60s tolerance
-        if (diff > 60) {
-          console.warn(`  ⚠️ All too far (${diff}s), trying next query`);
-          continue;
+      for (const s of results) {
+        const { score, nameSim, artistSim, durSim } = scoreSaavnResult(s, ct, ca, ytDur);
+        console.log(`  "${s.name}" → score=${score.toFixed(2)} (name=${nameSim.toFixed(2)} dur=${durSim.toFixed(2)} artist=${artistSim.toFixed(2)})`);
+        if (score > globalBestScore) {
+          globalBestScore = score;
+          globalBest = s;
         }
-      } else {
-        best = results[0];
-        console.log(`  → No YT duration, using first: "${best.name}"`);
       }
-
-      const urls = best.downloadUrl || [];
-      const audio = urls.find(u => u.quality === "320kbps")
-        || urls.find(u => u.quality === "160kbps")
-        || urls[urls.length - 1];
-      if (!audio?.url) continue;
-
-      console.log(`✅ Saavn: "${best.name}" @ ${audio.quality}`);
-      return { url: audio.url, quality: audio.quality, name: best.name };
     } catch (e) {
       console.warn(`Saavn "${q}" error:`, e.message);
     }
   }
-  console.warn(`❌ No match: "${song.title}"`);
-  return null;
+
+  // Minimum threshold: name similarity must be non-zero (at least one word overlap)
+  const { nameSim } = globalBest ? scoreSaavnResult(globalBest, ct, ca, ytDur) : { nameSim: 0 };
+  if (!globalBest || nameSim === 0) {
+    console.warn(`❌ No match: "${song.title}"`);
+    return null;
+  }
+
+  const urls = globalBest.downloadUrl || [];
+  const audio = urls.find(u => u.quality === "320kbps")
+    || urls.find(u => u.quality === "160kbps")
+    || urls[urls.length - 1];
+  if (!audio?.url) {
+    console.warn(`❌ No stream URL for best match: "${globalBest.name}"`);
+    return null;
+  }
+
+  console.log(`✅ Saavn: "${globalBest.name}" score=${globalBestScore.toFixed(2)} @ ${audio.quality}`);
+  return { url: audio.url, quality: audio.quality, name: globalBest.name };
 };
 
 // ── Single Audio Element ──────────────────────────────────────
