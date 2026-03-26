@@ -277,8 +277,11 @@ const findSaavnSong = async (song) => {
     return null;
   }
 
+  // Force HTTPS — some Saavn CDN URLs return http:// which is mixed content
+  // on HTTPS PWAs. Audio still plays but Media Session won't activate.
+  const secureUrl = audio.url.replace(/^http:\/\//i, "https://");
   console.log(`✅ Saavn: "${globalBest.name}" score=${globalBestScore.toFixed(2)} @ ${audio.quality}`);
-  return { url: audio.url, quality: audio.quality, name: globalBest.name };
+  return { url: secureUrl, quality: audio.quality, name: globalBest.name };
 };
 
 // ── Single Audio Element ──────────────────────────────────────
@@ -289,6 +292,7 @@ let _currentLoadId = 0;
 const getAudio = () => {
   if (!window._audioEl) {
     const el = new Audio();
+    el.crossOrigin = "anonymous";
     el.setAttribute("playsinline", "true");
     el.setAttribute("webkit-playsinline", "true");
     el.preload = "auto";
@@ -382,7 +386,9 @@ const setMediaSession = (song) => {
         { src: song.thumbnail.replace("hqdefault", "mqdefault"), sizes: "320x180", type: "image/jpeg" },
       ],
     });
-    navigator.mediaSession.playbackState = "playing";
+    // Only set "playing" if audio is actually playing
+    const el2 = window._audioEl;
+    navigator.mediaSession.playbackState = (el2 && !el2.paused) ? "playing" : "paused";
 
     // Position state shows seek bar in notification
     try {
@@ -454,7 +460,6 @@ export const usePlayerStore = create((set, get) => ({
     saveSession({ currentSong: song, queue: newQueue, progress: 0 });
 
     const el = getAudio();
-    el.pause();
     el.volume = get().volume;
 
     // Tag this load so we can detect stale responses
@@ -475,9 +480,15 @@ export const usePlayerStore = create((set, get) => ({
       const savedPos = get().savedProgress;
       el.src = result.url;
       el.load();
+
+      // Set media session metadata AFTER src is set, BEFORE play
+      setMediaSession(song);
+
       el.play()
         .then(() => {
           if (savedPos > 3) el.currentTime = savedPos;
+          // Re-set media session after play succeeds to ensure notification shows
+          setMediaSession(song);
         })
         .catch(err => {
           // iOS blocks autoplay — will resume on next tap
