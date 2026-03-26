@@ -15,9 +15,7 @@ export default function LikedPage() {
 
   const playAll = () => {
     if (!likedSongs.length) return;
-    const songs = likedSongs.map(s => ({ id: s.yt_video_id, title: s.title, artist: s.artist, thumbnail: s.thumbnail_url, duration: s.duration_seconds }));
-    const [first, ...rest] = songs;
-    // Use fromQueue so the queue isn't cleared
+    const [first, ...rest] = likedSongs;
     usePlayerStore.getState().clearQueue();
     rest.forEach(s => addToQueue(s));
     playSong(first, { fromQueue: true });
@@ -66,10 +64,9 @@ export default function LikedPage() {
 
       {/* Songs list */}
       {likedSongs.map((song, i) => {
-        const isActive = currentSong?.id === song.yt_video_id;
-        const songObj = { id: song.yt_video_id, title: song.title, artist: song.artist, thumbnail: song.thumbnail_url, duration: song.duration_seconds };
+        const isActive = currentSong?.id === song.id;
         return (
-          <div key={song.yt_video_id} onClick={() => playSong(songObj)}
+          <div key={song.id} onClick={() => playSong(song)}
             style={{
               display: "flex", alignItems: "center", gap: "12px",
               padding: "8px 12px", borderRadius: "8px", cursor: "pointer",
@@ -82,14 +79,14 @@ export default function LikedPage() {
             <div style={{ width: "20px", textAlign: "center", color: isActive ? "var(--accent)" : "var(--text-muted)", fontSize: "13px" }}>
               {isActive && isPlaying ? "▶" : i + 1}
             </div>
-            <img src={song.thumbnail_url} alt="" style={{ width: "40px", height: "40px", borderRadius: "6px", objectFit: "cover" }} />
+            <img src={song.thumbnail} alt="" style={{ width: "40px", height: "40px", borderRadius: "6px", objectFit: "cover" }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: "14px", fontWeight: 500, color: isActive ? "var(--accent)" : "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</div>
               <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>{song.artist}</div>
             </div>
-            <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>{formatDuration(song.duration_seconds)}</div>
-            <LikeButton song={songObj} />
-            <button onClick={(e) => { e.stopPropagation(); addToQueue(songObj); }} title="Add to queue"
+            <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>{formatDuration(song.duration)}</div>
+            <LikeButton song={song} />
+            <button onClick={(e) => { e.stopPropagation(); addToQueue(song); }} title="Add to queue"
               style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: "16px", padding: "4px" }}>+</button>
           </div>
         );

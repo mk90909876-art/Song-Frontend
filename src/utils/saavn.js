@@ -5,7 +5,7 @@ export const saavnToSong = (s) => ({
   id: s.id,
   title: s.name,
   artist: s.artists?.primary?.map((a) => a.name).join(", ") || "Unknown Artist",
-  duration: s.duration || 0,
+  duration: parseInt(s.duration) || 0,
   thumbnail:
     s.image?.find((i) => i.quality === "500x500")?.url ||
     s.image?.[s.image.length - 1]?.url ||

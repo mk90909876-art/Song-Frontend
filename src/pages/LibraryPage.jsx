@@ -12,27 +12,26 @@ function formatDuration(s) {
 
 function SongRow({ song, index, onRemove }) {
   const { playSong, currentSong, isPlaying, addToQueue } = usePlayerStore();
-  const isActive = currentSong?.id === song.yt_video_id;
-  const songObj = { id: song.yt_video_id, title: song.title, artist: song.artist, thumbnail: song.thumbnail_url, duration: song.duration_seconds };
+  const isActive = currentSong?.id === song.id;
 
   return (
-    <div onClick={() => playSong(songObj)}
+    <div onClick={() => playSong(song)}
       style={{ display: "flex", alignItems: "center", gap: "12px", padding: "8px 12px", borderRadius: "8px", cursor: "pointer", background: isActive ? "var(--bg-elevated)" : "transparent", transition: "background 0.15s" }}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "var(--bg-elevated)"; }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
     >
       <div style={{ width: "20px", textAlign: "center", color: isActive ? "var(--accent)" : "var(--text-muted)", fontSize: "13px" }}>{isActive && isPlaying ? "▶" : index + 1}</div>
-      <img src={song.thumbnail_url} alt="" style={{ width: "40px", height: "40px", borderRadius: "6px", objectFit: "cover" }} />
+      <img src={song.thumbnail} alt="" style={{ width: "40px", height: "40px", borderRadius: "6px", objectFit: "cover" }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "14px", fontWeight: 500, color: isActive ? "var(--accent)" : "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</div>
         <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>{song.artist}</div>
       </div>
-      <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>{formatDuration(song.duration_seconds)}</div>
-      <LikeButton song={songObj} />
-      <button onClick={(e) => { e.stopPropagation(); addToQueue(songObj); }} title="Add to queue"
+      <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>{formatDuration(song.duration)}</div>
+      <LikeButton song={song} />
+      <button onClick={(e) => { e.stopPropagation(); addToQueue(song); }} title="Add to queue"
         style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: "16px", padding: "4px" }}>+</button>
       {onRemove && (
-        <button onClick={(e) => { e.stopPropagation(); onRemove(song.yt_video_id); }}
+        <button onClick={(e) => { e.stopPropagation(); onRemove(song.id); }}
           style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: "16px", padding: "4px" }}>✕</button>
       )}
     </div>
@@ -61,10 +60,9 @@ export default function LibraryPage() {
     setNewName(""); setCreating(false);
   };
 
-  const playAll = (songs) => {
-    if (!songs.length) return;
-    const songObjs = songs.map(s => ({ id: s.yt_video_id, title: s.title, artist: s.artist, thumbnail: s.thumbnail_url, duration: s.duration_seconds }));
-    const [first, ...rest] = songObjs;
+  const playAll = (playlistSongs) => {
+    if (!playlistSongs.length) return;
+    const [first, ...rest] = playlistSongs;
     usePlayerStore.getState().clearQueue();
     rest.forEach(s => addToQueue(s));
     playSong(first, { fromQueue: true });
@@ -92,7 +90,7 @@ export default function LibraryPage() {
 
         {songs.length === 0 && <div style={{ color: "var(--text-muted)", textAlign: "center", marginTop: "40px" }}><p>No songs yet — use ⋯ on any song to add here</p></div>}
         {songs.map((song, i) => (
-          <SongRow key={song.yt_video_id} song={song} index={i} onRemove={(vid) => removeSongFromPlaylist(selectedPlaylist.id, vid)} />
+          <SongRow key={song.id} song={song} index={i} onRemove={(id) => removeSongFromPlaylist(selectedPlaylist.id, id)} />
         ))}
       </div>
     );

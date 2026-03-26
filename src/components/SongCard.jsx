@@ -20,13 +20,7 @@ export function BottomSheet({ song, onClose }) {
 
   const addToPlaylist = async (playlistId) => {
     try {
-      await api.post(`/api/library/playlists/${playlistId}/songs`, {
-        yt_video_id: song.id,
-        title: song.title,
-        artist: song.artist,
-        thumbnail_url: song.thumbnail,
-        duration_seconds: song.duration,
-      });
+      await addSongToPlaylist(playlistId, song);
       onClose();
     } catch (err) {
       console.error("Add to playlist error:", err);
@@ -135,8 +129,9 @@ function SheetItem({ icon, label, onClick }) {
 
 // ── Song Card ─────────────────────────────────────────────────
 export default function SongCard({ song, index }) {
-  const { playSong, currentSong, isPlaying } = usePlayerStore();
+  const { playSong, currentSong, isPlaying, saavnUnavailable } = usePlayerStore();
   const isActive = currentSong?.id === song.id;
+  const isUnavailable = isActive && saavnUnavailable;
   const [showSheet, setShowSheet] = useState(false);
 
   return (
@@ -153,8 +148,8 @@ export default function SongCard({ song, index }) {
         onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
       >
         {/* Index */}
-        <div style={{ width: "20px", textAlign: "center", flexShrink: 0, fontSize: "13px", color: isActive ? "var(--accent)" : "var(--text-muted)" }}>
-          {isActive && isPlaying ? "▶" : (index != null ? index + 1 : "♪")}
+        <div style={{ width: "20px", textAlign: "center", flexShrink: 0, fontSize: "13px", color: isUnavailable ? "#ff4444" : isActive ? "var(--accent)" : "var(--text-muted)" }}>
+          {isUnavailable ? "!" : isActive && isPlaying ? "▶" : (index != null ? index + 1 : "♪")}
         </div>
 
         {/* Thumbnail */}
@@ -162,7 +157,9 @@ export default function SongCard({ song, index }) {
 
         {/* Title + Artist */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: "14px", fontWeight: 500, color: isActive ? "var(--accent)" : "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</div>
+          <div style={{ fontSize: "14px", fontWeight: 500, color: isUnavailable ? "#ff4444" : isActive ? "var(--accent)" : "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {song.title} {isUnavailable && <span style={{ fontSize: "10px", verticalAlign: "middle" }}>(N/A)</span>}
+          </div>
           <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>{song.artist}</div>
         </div>
 

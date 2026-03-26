@@ -20,14 +20,22 @@ export default function HomePage() {
     const fetchRec = async () => {
       const seed = history[0] || likedSongs[0];
       if (!seed) return;
-      const seedId = seed.id || seed.yt_video_id;
-      if (!seedId) return;
+      
       setLoadingRec(true);
       try {
-        const { data } = await api.get(`/api/music/related/${seedId}`);
-        setRecommended(data.results.slice(0, 8));
-      } catch {}
-      finally { setLoadingRec(false); }
+        const { SAAVN, saavnToSong } = await import("../utils/saavn");
+        const res = await fetch(`${SAAVN}/api/songs/${seed.id}/suggestions?limit=15`);
+        const data = await res.json();
+        if (data.success && data.data) {
+          setRecommended(data.data.map(saavnToSong).slice(0, 10));
+        } else {
+          // Fallback to old backend related if Saavn fails
+          const { data: related } = await api.get(`/api/music/related/${seed.id}`);
+          setRecommended(related.results.slice(0, 8));
+        }
+      } catch (e) {
+        console.error("Home suggestions failed:", e);
+      } finally { setLoadingRec(false); }
     };
     fetchRec();
   }, [history.length]);
@@ -98,10 +106,9 @@ export default function HomePage() {
         <section style={{ marginBottom: "40px" }}>
           <h2 style={{ fontSize: "12px", fontWeight: 700, marginBottom: "14px", color: "var(--text-muted)", letterSpacing: "0.08em" }}>FROM YOUR LIKED SONGS</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-            {likedSongs.slice(0, 5).map((song, i) => {
-              const songObj = { id: song.yt_video_id, title: song.title, artist: song.artist, thumbnail: song.thumbnail_url, duration: song.duration_seconds };
-              return <SongCard key={song.yt_video_id} song={songObj} index={i} />;
-            })}
+            {likedSongs.slice(0, 5).map((song, i) => (
+              <SongCard key={song.id} song={song} index={i} />
+            ))}
           </div>
         </section>
       )}

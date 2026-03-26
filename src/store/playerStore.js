@@ -451,7 +451,7 @@ export const usePlayerStore = create((set, get) => ({
 
     const newQueue = fromQueue ? queue : [];
     set({ currentSong: song, isPlaying: false, progress: 0, duration: 0, history: newHistory, savedProgress: 0, queue: newQueue, saavnUnavailable: false });
-    saveSession({ currentSong: song, queue: newQueue, progress: 0 });
+    saveSession({ currentSong: song, queue: newQueue, progress: 0.1 }); // Save a tiny bit of progress to mark as started
 
     // Set media session immediately with song info (even before audio loads)
     setMediaSession(song);
@@ -498,13 +498,18 @@ export const usePlayerStore = create((set, get) => ({
     // Auto queue refill
     if (autoQueue && newQueue.filter(s => s.id !== song.id).length < QUEUE_REFILL_AT) {
       setTimeout(() => {
-        if (song.source === "saavn") get().fetchSuggestions(song);
-        else get().fetchMix(song);
+        // ALWAYS try Saavn suggestions first now, regardless of source
+        get().fetchSuggestions(song);
       }, 3000);
     }
   },
 
   fetchMix: async (song) => {
+    // If we have a Saavn match or it's a Saavn song, use suggestions instead
+    if (song.source === "saavn" || song.id?.length > 11) {
+      return get().fetchSuggestions(song);
+    }
+    
     try {
       const { queue, currentSong, history } = get();
       if (queue.length >= QUEUE_MAX) return;

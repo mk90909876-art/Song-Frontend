@@ -16,7 +16,15 @@ export const useLibraryStore = create((set, get) => ({
         api.get("/api/library/playlists"),
       ]);
       set({
-        likedSongs: likedRes.data.songs,
+        likedSongs: likedRes.data.songs.map(s => ({
+          id: s.yt_video_id,
+          title: s.title,
+          artist: s.artist,
+          thumbnail: s.thumbnail_url,
+          duration: s.duration_seconds,
+          source: s.source || "youtube",
+          liked_at: s.liked_at,
+        })),
         playlists: playlistsRes.data.playlists,
         loaded: true,
       });
@@ -29,21 +37,22 @@ export const useLibraryStore = create((set, get) => ({
   clearLibrary: () => set({ likedSongs: [], playlists: [], playlistSongs: {}, loaded: false }),
 
   // ── Liked Songs ────────────────────────────────────────────
-  isLiked: (videoId) => get().likedSongs.some(s => s.yt_video_id === videoId),
+  isLiked: (id) => get().likedSongs.some(s => s.id === id),
 
   likeSong: async (song) => {
-    // Optimistic update — update UI instantly
-    const newSong = {
-      yt_video_id: song.id,
+    // Standardize before adding to state
+    const standardized = {
+      id: song.id,
       title: song.title,
       artist: song.artist,
-      thumbnail_url: song.thumbnail,
-      duration_seconds: song.duration,
+      thumbnail: song.thumbnail,
+      duration: song.duration,
+      source: song.source || "youtube",
       liked_at: new Date().toISOString(),
     };
-    set(s => ({ likedSongs: [newSong, ...s.likedSongs] }));
+    
+    set(s => ({ likedSongs: [standardized, ...s.likedSongs] }));
 
-    // Sync to server in background
     try {
       await api.post("/api/library/liked", {
         yt_video_id: song.id,
@@ -51,24 +60,21 @@ export const useLibraryStore = create((set, get) => ({
         artist: song.artist,
         thumbnail_url: song.thumbnail,
         duration_seconds: song.duration,
+        source: song.source || "youtube",
       });
     } catch (err) {
-      // Revert on failure
-      set(s => ({ likedSongs: s.likedSongs.filter(s => s.yt_video_id !== song.id) }));
+      set(s => ({ likedSongs: s.likedSongs.filter(s => s.id !== song.id) }));
       console.error("Failed to like song:", err);
     }
   },
 
-  unlikeSong: async (videoId) => {
-    // Optimistic update
+  unlikeSong: async (id) => {
     const prev = get().likedSongs;
-    set(s => ({ likedSongs: s.likedSongs.filter(s => s.yt_video_id !== videoId) }));
+    set(s => ({ likedSongs: s.likedSongs.filter(s => s.id !== id) }));
 
-    // Sync to server
     try {
-      await api.delete(`/api/library/liked/${videoId}`);
+      await api.delete(`/api/library/liked/${id}`);
     } catch (err) {
-      // Revert on failure
       set({ likedSongs: prev });
       console.error("Failed to unlike song:", err);
     }
@@ -92,24 +98,31 @@ export const useLibraryStore = create((set, get) => ({
 
   // ── Playlist Songs ─────────────────────────────────────────
   loadPlaylistSongs: async (playlistId) => {
-    // always fetch fresh
     const { data } = await api.get(`/api/library/playlists/${playlistId}/songs`);
-    set(s => ({ playlistSongs: { ...s.playlistSongs, [playlistId]: data.songs } }));
+    const standardized = data.songs.map(s => ({
+      id: s.yt_video_id,
+      title: s.title,
+      artist: s.artist,
+      thumbnail: s.thumbnail_url,
+      duration: s.duration_seconds,
+      source: s.source || "youtube",
+    }));
+    set(s => ({ playlistSongs: { ...s.playlistSongs, [playlistId]: standardized } }));
   },
 
   addSongToPlaylist: async (playlistId, song) => {
-    // Optimistic update
-    const newSong = {
-      yt_video_id: song.id,
+    const standardized = {
+      id: song.id,
       title: song.title,
       artist: song.artist,
-      thumbnail_url: song.thumbnail,
-      duration_seconds: song.duration,
+      thumbnail: song.thumbnail,
+      duration: song.duration,
+      source: song.source || "youtube",
     };
     set(s => ({
       playlistSongs: {
         ...s.playlistSongs,
-        [playlistId]: [...(s.playlistSongs[playlistId] || []), newSong],
+        [playlistId]: [...(s.playlistSongs[playlistId] || []), standardized],
       }
     }));
 
@@ -120,21 +133,22 @@ export const useLibraryStore = create((set, get) => ({
         artist: song.artist,
         thumbnail_url: song.thumbnail,
         duration_seconds: song.duration,
+        source: song.source || "youtube",
       });
     } catch (err) {
       console.error("Failed to add song to playlist:", err);
     }
   },
 
-  removeSongFromPlaylist: async (playlistId, videoId) => {
+  removeSongFromPlaylist: async (playlistId, id) => {
     set(s => ({
       playlistSongs: {
         ...s.playlistSongs,
-        [playlistId]: (s.playlistSongs[playlistId] || []).filter(s => s.yt_video_id !== videoId),
+        [playlistId]: (s.playlistSongs[playlistId] || []).filter(s => s.id !== id),
       }
     }));
     try {
-      await api.delete(`/api/library/playlists/${playlistId}/songs/${videoId}`);
+      await api.delete(`/api/library/playlists/${playlistId}/songs/${id}`);
     } catch (err) {
       console.error("Failed to remove song:", err);
     }
