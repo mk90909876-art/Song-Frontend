@@ -379,7 +379,7 @@ const setMediaSession = (song) => {
       artist: song.artist,
       artwork: [
         { src: song.thumbnail, sizes: "480x360", type: "image/jpeg" },
-        { src: song.thumbnail.replace("hqdefault", "maxresdefault"), sizes: "1280x720", type: "image/jpeg" },
+        { src: song.thumbnail.replace("hqdefault", "mqdefault"), sizes: "320x180", type: "image/jpeg" },
       ],
     });
     navigator.mediaSession.playbackState = "playing";
@@ -452,9 +452,6 @@ export const usePlayerStore = create((set, get) => ({
     const newQueue = fromQueue ? queue : [];
     set({ currentSong: song, isPlaying: false, progress: 0, duration: 0, history: newHistory, savedProgress: 0, queue: newQueue, saavnUnavailable: false });
     saveSession({ currentSong: song, queue: newQueue, progress: 0 });
-
-    // Set media session immediately with song info (even before audio loads)
-    setMediaSession(song);
 
     const el = getAudio();
     el.pause();
