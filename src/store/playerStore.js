@@ -104,14 +104,39 @@ const getAudio = () => {
 
     el.addEventListener("play", () => {
       usePlayerStore.getState().setIsPlaying(true);
-      const song = usePlayerStore.getState().currentSong;
-      if (song) setMediaSession(song);
+      if ("mediaSession" in navigator) {
+        navigator.mediaSession.playbackState = "playing";
+        const song = usePlayerStore.getState().currentSong;
+        if (song) setMediaSession(song);
+      }
     });
 
     el.addEventListener("pause", () => {
       usePlayerStore.getState().setIsPlaying(false);
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
     });
+
+    // ── Singleton Media Session Handlers ──
+    if ("mediaSession" in navigator) {
+      const s = () => usePlayerStore.getState();
+      navigator.mediaSession.setActionHandler("play", () => s().togglePlay());
+      navigator.mediaSession.setActionHandler("pause", () => s().togglePlay());
+      navigator.mediaSession.setActionHandler("nexttrack", () => s().nextSong());
+      navigator.mediaSession.setActionHandler("previoustrack", () => s().prevSong());
+      navigator.mediaSession.setActionHandler("seekto", (a) => {
+        el.currentTime = a.seekTime;
+        s().setProgress(a.seekTime);
+      });
+      try {
+        navigator.mediaSession.setActionHandler("seekbackward", (a) => {
+          el.currentTime = Math.max(0, el.currentTime - (a.seekOffset || 10));
+        });
+        navigator.mediaSession.setActionHandler("seekforward", (a) => {
+          el.currentTime = Math.min(el.duration || 0, el.currentTime + (a.seekOffset || 10));
+        });
+      } catch {}
+      try { navigator.mediaSession.setActionHandler("stop", () => { el.pause(); el.currentTime = 0; s().setIsPlaying(false); }); } catch {}
+    }
 
     window._audioEl = el;
   }
@@ -123,53 +148,29 @@ const setMediaSession = (song) => {
   if (!("mediaSession" in navigator) || !song) return;
   try {
     const el = getAudio();
-
-    navigator.mediaSession.setActionHandler("play", () => {
-      el.play();
-      usePlayerStore.getState().setIsPlaying(true);
-    });
-    navigator.mediaSession.setActionHandler("pause", () => {
-      el.pause();
-      usePlayerStore.getState().setIsPlaying(false);
-    });
-    navigator.mediaSession.setActionHandler("nexttrack", () => usePlayerStore.getState().nextSong());
-    navigator.mediaSession.setActionHandler("previoustrack", () => usePlayerStore.getState().prevSong());
-    navigator.mediaSession.setActionHandler("seekto", (a) => {
-      el.currentTime = a.seekTime;
-      usePlayerStore.getState().setProgress(a.seekTime);
-    });
-    try {
-      navigator.mediaSession.setActionHandler("seekbackward", (a) => {
-        el.currentTime = Math.max(0, el.currentTime - (a.seekOffset || 10));
-      });
-      navigator.mediaSession.setActionHandler("seekforward", (a) => {
-        el.currentTime = Math.min(el.duration || 0, el.currentTime + (a.seekOffset || 10));
-      });
-    } catch {}
+    const artwork = [
+      { src: song.thumbnail, sizes: "500x500", type: "image/jpeg" }
+    ];
+    // If it's a legacy YouTube thumbnail (optional extra coverage)
+    if (song.thumbnail.includes("googleusercontent") || song.thumbnail.includes("ytimg")) {
+       artwork.push({ src: song.thumbnail.replace("hqdefault", "maxresdefault"), sizes: "1280x720", type: "image/jpeg" });
+    }
 
     navigator.mediaSession.metadata = new MediaMetadata({
       title: song.title,
       artist: song.artist,
-      artwork: [
-        { src: song.thumbnail, sizes: "480x360", type: "image/jpeg" },
-        { src: song.thumbnail.replace("hqdefault", "maxresdefault"), sizes: "1280x720", type: "image/jpeg" },
-      ],
+      artwork
     });
-    navigator.mediaSession.playbackState = "playing";
 
-    try {
-      if (el.duration > 0) {
-        navigator.mediaSession.setPositionState({
-          duration: el.duration,
-          playbackRate: 1,
-          position: el.currentTime || 0,
-        });
-      }
-    } catch {}
-
-    console.log("✅ MediaSession:", song.title);
+    if (el.duration > 0) {
+      navigator.mediaSession.setPositionState({
+        duration: el.duration,
+        playbackRate: 1,
+        position: el.currentTime || 0,
+      });
+    }
   } catch (e) {
-    console.warn("MediaSession error:", e.message);
+    console.warn("MediaSession update error:", e.message);
   }
 };
 
