@@ -141,10 +141,11 @@ export const useLibraryStore = create((set, get) => ({
       duration: song.duration,
       source: "saavn",
     };
+    const prev = get().playlistSongs[playlistId] || [];
     set(s => ({
       playlistSongs: {
         ...s.playlistSongs,
-        [playlistId]: [...(s.playlistSongs[playlistId] || []), standardized],
+        [playlistId]: [...prev, standardized],
       }
     }));
 
@@ -157,20 +158,33 @@ export const useLibraryStore = create((set, get) => ({
         duration_seconds: song.duration,
       });
     } catch (err) {
+      set(s => ({
+        playlistSongs: {
+          ...s.playlistSongs,
+          [playlistId]: prev,
+        }
+      }));
       console.error("Failed to add song to playlist:", err);
     }
   },
 
   removeSongFromPlaylist: async (playlistId, id) => {
+    const prev = get().playlistSongs[playlistId] || [];
     set(s => ({
       playlistSongs: {
         ...s.playlistSongs,
-        [playlistId]: (s.playlistSongs[playlistId] || []).filter(s => s.id !== id),
+        [playlistId]: prev.filter(s => s.id !== id),
       }
     }));
     try {
       await api.delete(`/api/library/playlists/${playlistId}/songs/${id}`);
     } catch (err) {
+      set(s => ({
+        playlistSongs: {
+          ...s.playlistSongs,
+          [playlistId]: prev,
+        }
+      }));
       console.error("Failed to remove song:", err);
     }
   },
