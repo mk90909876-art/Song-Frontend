@@ -28,6 +28,7 @@ export const initAudioSession = () => {
 
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    setupStateListener(audioCtx);
     silentSource = createSilentBuffer(audioCtx);
     silentSource.start(0);
     console.log("Audio session initialized, state:", audioCtx.state);
@@ -46,6 +47,16 @@ export const resumeAudioSession = async () => {
       console.warn("AudioContext resume failed:", err);
     }
   }
+};
+
+// Auto-resume if the OS suspends it (e.g. after a phone call or notification)
+const setupStateListener = (ctx) => {
+  ctx.onstatechange = () => {
+    if (ctx.state === "suspended") {
+       console.log("Audio session suspended by OS, attempting resume...");
+       resumeAudioSession();
+    }
+  };
 };
 
 // Call once on first user tap — iOS requires a gesture to unlock AudioContext

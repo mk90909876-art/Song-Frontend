@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { saavnToSong, SAAVN } from "../utils/saavn";
+import { resumeAudioSession } from "../utils/audioSession";
 
 const MAX_HISTORY = 50;
 const MAX_SEARCH_HISTORY = 20;
@@ -104,6 +105,7 @@ const getAudio = () => {
 
     el.addEventListener("play", () => {
       usePlayerStore.getState().setIsPlaying(true);
+      resumeAudioSession(); // Wake up AudioContext on play
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "playing";
         const song = usePlayerStore.getState().currentSong;
@@ -367,6 +369,9 @@ export const usePlayerStore = create((set, get) => ({
     set({ queue: q });
     saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress, history: get().history, stationId: get().stationId });
   },
-  clearQueue: () => { set({ queue: [] }); saveSession({ currentSong: get().currentSong, queue: [], progress: get().progress, history: get().history, stationId: get().stationId }); },
+  clearQueue: () => {
+    set({ queue: [], stationId: null });
+    saveSession({ currentSong: get().currentSong, queue: [], progress: get().progress, history: get().history, stationId: null });
+  },
   toggleAutoQueue: () => set(s => { const v = !s.autoQueue; localStorage.setItem("autoQueue", v); return { autoQueue: v }; }),
 }));
