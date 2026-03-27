@@ -218,15 +218,25 @@ export const usePlayerStore = create((set, get) => ({
 
   // ── Play a song ───────────────────────────────────────────
   playSong: (song, options = {}) => {
-    const { fromQueue = false } = options;
+    const { fromQueue = false, updatedQueue = null } = options;
     const { history, currentSong, autoQueue, queue } = get();
 
     const newHistory = currentSong
       ? [currentSong, ...history.filter(h => h.id !== currentSong.id)].slice(0, MAX_HISTORY)
       : history;
 
-    const newQueue = fromQueue ? queue : [];
-    set({ currentSong: song, isPlaying: false, progress: 0, duration: 0, history: newHistory, savedProgress: 0, queue: newQueue, saavnUnavailable: false, stationId: fromQueue ? get().stationId : null });
+    const newQueue = updatedQueue !== null ? updatedQueue : (fromQueue ? queue : []);
+    set({ 
+      currentSong: song, 
+      isPlaying: false, 
+      progress: 0, 
+      duration: 0, 
+      history: newHistory, 
+      savedProgress: 0, 
+      queue: newQueue, 
+      saavnUnavailable: false, 
+      stationId: fromQueue ? get().stationId : null 
+    });
     saveSession({ currentSong: song, queue: newQueue, progress: 0.1, history: newHistory, stationId: fromQueue ? get().stationId : null });
 
     setMediaSession(song);
@@ -314,8 +324,8 @@ export const usePlayerStore = create((set, get) => ({
     }
     const idx = shuffle ? Math.floor(Math.random() * queue.length) : 0;
     const next = queue[idx];
-    set({ queue: queue.filter((_, i) => i !== idx) });
-    get().playSong(next, { fromQueue: true });
+    const newQueue = queue.filter((_, i) => i !== idx);
+    get().playSong(next, { fromQueue: true, updatedQueue: newQueue });
   },
 
   prevSong: () => {
@@ -328,8 +338,8 @@ export const usePlayerStore = create((set, get) => ({
     const { queue } = get();
     const song = queue[index];
     if (!song) return;
-    set({ queue: queue.filter((_, i) => i !== index) });
-    get().playSong(song, { fromQueue: true });
+    const newQueue = queue.filter((_, i) => i !== index);
+    get().playSong(song, { fromQueue: true, updatedQueue: newQueue });
   },
 
   togglePlay: () => {
