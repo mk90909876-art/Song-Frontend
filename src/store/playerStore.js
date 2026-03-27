@@ -243,7 +243,7 @@ export const usePlayerStore = create((set, get) => ({
 
   // ── Play a song ───────────────────────────────────────────
   playSong: (song, options = {}) => {
-    const { fromQueue = false, updatedQueue = null } = options;
+    const { fromQueue = false, updatedQueue = null, initialProgress = 0 } = options;
     const { history, currentSong, autoQueue, queue } = get();
 
     const newHistory = currentSong
@@ -254,15 +254,15 @@ export const usePlayerStore = create((set, get) => ({
     set({ 
       currentSong: song, 
       isPlaying: false, 
-      progress: 0, 
+      progress: initialProgress, 
       duration: 0, 
       history: newHistory, 
-      savedProgress: 0, 
+      savedProgress: initialProgress, 
       queue: newQueue, 
       saavnUnavailable: false, 
       stationId: fromQueue ? get().stationId : null 
     });
-    saveSession({ currentSong: song, queue: newQueue, progress: 0.1, history: newHistory, stationId: fromQueue ? get().stationId : null });
+    saveSession({ currentSong: song, queue: newQueue, progress: initialProgress, history: newHistory, stationId: fromQueue ? get().stationId : null });
 
     setMediaSession(song);
 
@@ -377,7 +377,18 @@ export const usePlayerStore = create((set, get) => ({
     const el = getAudio();
     // Let the audio element's play/pause events handle isPlaying state
     // This prevents race conditions with MediaSession
-    if (el.paused) { el.play().catch(() => {}); }
+    if (el.paused) { 
+      // Handle first interaction after app reload (no src yet)
+      if (!el.src && get().currentSong) {
+        get().playSong(get().currentSong, { 
+          fromQueue: true, 
+          updatedQueue: get().queue,
+          initialProgress: get().progress 
+        });
+      } else {
+        el.play().catch(() => {}); 
+      }
+    }
     else { el.pause(); }
   },
 
