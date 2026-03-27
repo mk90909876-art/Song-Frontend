@@ -105,7 +105,7 @@ const getAudio = () => {
 
     el.addEventListener("play", () => {
       usePlayerStore.getState().setIsPlaying(true);
-      resumeAudioSession(); // Wake up AudioContext on play
+      resumeAudioSession();
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "playing";
         const song = usePlayerStore.getState().currentSong;
@@ -116,6 +116,26 @@ const getAudio = () => {
     el.addEventListener("pause", () => {
       usePlayerStore.getState().setIsPlaying(false);
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
+    });
+
+    el.addEventListener("loadedmetadata", () => {
+      const song = usePlayerStore.getState().currentSong;
+      if (song) setMediaSession(song);
+    });
+
+    el.addEventListener("timeupdate", () => {
+      // Throttled update to MediaSession position
+      if ("mediaSession" in navigator && el.duration > 0 && Math.floor(el.currentTime) % 5 === 0) {
+        navigator.mediaSession.setPositionState({
+          duration: el.duration,
+          playbackRate: el.playbackRate || 1,
+          position: el.currentTime,
+        });
+      }
+    });
+
+    el.addEventListener("emptied", () => {
+      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "none";
     });
 
     // ── Singleton Media Session Handlers ──
@@ -150,10 +170,7 @@ const setMediaSession = (song) => {
   if (!("mediaSession" in navigator) || !song) return;
   try {
     const el = getAudio();
-    const artwork = [
-      { src: song.thumbnail, sizes: "500x500", type: "image/jpeg" }
-    ];
-    // If it's a legacy YouTube thumbnail (optional extra coverage)
+    const artwork = [{ src: song.thumbnail, sizes: "500x500", type: "image/jpeg" }];
     if (song.thumbnail.includes("googleusercontent") || song.thumbnail.includes("ytimg")) {
        artwork.push({ src: song.thumbnail.replace("hqdefault", "maxresdefault"), sizes: "1280x720", type: "image/jpeg" });
     }
@@ -164,10 +181,11 @@ const setMediaSession = (song) => {
       artwork
     });
 
-    if (el.duration > 0) {
+    // Update position state if duration is known
+    if (el.duration > 0 && !isNaN(el.duration)) {
       navigator.mediaSession.setPositionState({
         duration: el.duration,
-        playbackRate: 1,
+        playbackRate: el.playbackRate || 1,
         position: el.currentTime || 0,
       });
     }

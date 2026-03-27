@@ -11,7 +11,8 @@
 
 let audioCtx = null;
 let silentSource = null;
-let keepAliveInterval = null;
+let silentAudio = null; // New: Silent audio element heartbeat
+const SILENT_DATA = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAP8A/wD/";
 
 const createSilentBuffer = (ctx) => {
   // 2 seconds of silence at 22050 Hz
@@ -31,6 +32,15 @@ export const initAudioSession = () => {
     setupStateListener(audioCtx);
     silentSource = createSilentBuffer(audioCtx);
     silentSource.start(0);
+
+    // ── Silent Audio Element Heartbeat ──
+    if (!silentAudio) {
+      silentAudio = new Audio(SILENT_DATA);
+      silentAudio.loop = true;
+      silentAudio.volume = 0.01; // Tiny volume to keep it active
+      silentAudio.play().catch(() => {});
+    }
+
     console.log("Audio session initialized, state:", audioCtx.state);
   } catch (err) {
     console.warn("AudioContext init failed:", err);
@@ -46,6 +56,9 @@ export const resumeAudioSession = async () => {
     } catch (err) {
       console.warn("AudioContext resume failed:", err);
     }
+  }
+  if (silentAudio && silentAudio.paused) {
+    silentAudio.play().catch(() => {});
   }
 };
 
