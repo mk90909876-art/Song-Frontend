@@ -48,7 +48,7 @@ const resolveSaavnUrl = async (song) => {
   if (direct?.url) return direct.url;
 
   // Fetch full song details from Saavn worker by ID
-  const res = await fetch(`${SAAVN}/api/songs?id=${song.id}`);
+  const res = await fetch(`${SAAVN}/api/songs/${song.id}`);
   const data = await res.json();
   const songData = data?.data?.[0];
   if (!songData?.downloadUrl?.length) return null;

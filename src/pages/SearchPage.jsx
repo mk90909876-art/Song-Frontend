@@ -25,7 +25,7 @@ const PlaylistCard = ({ playlist }) => {
     setExpanded(true);
     setLoadingSongs(true);
     try {
-      const res = await fetch(`${SAAVN}/api/playlists?id=${playlist.id}`);
+      const res = await fetch(`${SAAVN}/api/playlists/${playlist.id}`);
       const data = await res.json();
       setSongs((data?.data?.songs || []).map(saavnToSong));
     } catch { setSongs([]); }
@@ -37,7 +37,7 @@ const PlaylistCard = ({ playlist }) => {
     let songList = songs;
     if (!songList.length) {
       try {
-        const res = await fetch(`${SAAVN}/api/playlists?id=${playlist.id}`);
+        const res = await fetch(`${SAAVN}/api/playlists/${playlist.id}`);
         const data = await res.json();
         songList = (data?.data?.songs || []).map(saavnToSong);
         setSongs(songList);
@@ -56,7 +56,7 @@ const PlaylistCard = ({ playlist }) => {
     try {
       let songList = songs;
       if (!songList.length) {
-        const res = await fetch(`${SAAVN}/api/playlists?id=${playlist.id}`);
+        const res = await fetch(`${SAAVN}/api/playlists/${playlist.id}`);
         const data = await res.json();
         songList = (data?.data?.songs || []).map(saavnToSong);
         setSongs(songList);
