@@ -17,12 +17,12 @@ export const useLibraryStore = create((set, get) => ({
       ]);
       set({
         likedSongs: likedRes.data.songs.map(s => ({
-          id: s.yt_video_id,
+          id: s.saavn_id,
           title: s.title,
           artist: s.artist,
           thumbnail: s.thumbnail_url,
           duration: s.duration_seconds,
-          source: s.source || "youtube",
+          source: "saavn",
           liked_at: s.liked_at,
         })),
         playlists: playlistsRes.data.playlists,
@@ -47,7 +47,7 @@ export const useLibraryStore = create((set, get) => ({
       artist: song.artist,
       thumbnail: song.thumbnail,
       duration: song.duration,
-      source: song.source || "youtube",
+      source: "saavn",
       liked_at: new Date().toISOString(),
     };
     
@@ -55,12 +55,11 @@ export const useLibraryStore = create((set, get) => ({
 
     try {
       await api.post("/api/library/liked", {
-        yt_video_id: song.id,
+        saavn_id: song.id,
         title: song.title,
         artist: song.artist,
         thumbnail_url: song.thumbnail,
         duration_seconds: song.duration,
-        source: song.source || "youtube",
       });
     } catch (err) {
       set(s => ({ likedSongs: s.likedSongs.filter(s => s.id !== song.id) }));
@@ -100,12 +99,12 @@ export const useLibraryStore = create((set, get) => ({
   loadPlaylistSongs: async (playlistId) => {
     const { data } = await api.get(`/api/library/playlists/${playlistId}/songs`);
     const standardized = data.songs.map(s => ({
-      id: s.yt_video_id,
+      id: s.saavn_id,
       title: s.title,
       artist: s.artist,
       thumbnail: s.thumbnail_url,
       duration: s.duration_seconds,
-      source: s.source || "youtube",
+      source: "saavn",
     }));
     set(s => ({ playlistSongs: { ...s.playlistSongs, [playlistId]: standardized } }));
   },
@@ -117,7 +116,7 @@ export const useLibraryStore = create((set, get) => ({
       artist: song.artist,
       thumbnail: song.thumbnail,
       duration: song.duration,
-      source: song.source || "youtube",
+      source: "saavn",
     };
     set(s => ({
       playlistSongs: {
@@ -128,12 +127,11 @@ export const useLibraryStore = create((set, get) => ({
 
     try {
       await api.post(`/api/library/playlists/${playlistId}/songs`, {
-        yt_video_id: song.id,
+        saavn_id: song.id,
         title: song.title,
         artist: song.artist,
         thumbnail_url: song.thumbnail,
         duration_seconds: song.duration,
-        source: song.source || "youtube",
       });
     } catch (err) {
       console.error("Failed to add song to playlist:", err);
