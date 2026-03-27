@@ -37,7 +37,7 @@ export const initAudioSession = () => {
     if (!silentAudio) {
       silentAudio = new Audio(SILENT_DATA);
       silentAudio.loop = true;
-      silentAudio.volume = 0.01; // Tiny volume to keep it active
+      silentAudio.volume = 0.001; // Extremely low but not zero (to keep OS focus)
       silentAudio.play().catch(() => {});
     }
 
