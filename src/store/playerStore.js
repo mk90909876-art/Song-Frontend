@@ -143,14 +143,19 @@ const getAudio = () => {
 
     // ── Singleton Media Session Handlers ──
     if ("mediaSession" in navigator) {
-      const s = () => usePlayerStore.getState();
-      navigator.mediaSession.setActionHandler("play", () => s().togglePlay());
-      navigator.mediaSession.setActionHandler("pause", () => s().togglePlay());
-      navigator.mediaSession.setActionHandler("nexttrack", () => s().nextSong());
-      navigator.mediaSession.setActionHandler("previoustrack", () => s().prevSong());
+      // IMPORTANT: Use explicit play/pause instead of togglePlay
+      // to prevent state confusion when OS sends rapid events
+      navigator.mediaSession.setActionHandler("play", () => {
+        el.play().catch(() => {});
+      });
+      navigator.mediaSession.setActionHandler("pause", () => {
+        el.pause();
+      });
+      navigator.mediaSession.setActionHandler("nexttrack", () => usePlayerStore.getState().nextSong());
+      navigator.mediaSession.setActionHandler("previoustrack", () => usePlayerStore.getState().prevSong());
       navigator.mediaSession.setActionHandler("seekto", (a) => {
         el.currentTime = a.seekTime;
-        s().setProgress(a.seekTime);
+        usePlayerStore.getState().setProgress(a.seekTime);
       });
       try {
         navigator.mediaSession.setActionHandler("seekbackward", (a) => {
@@ -160,7 +165,7 @@ const getAudio = () => {
           el.currentTime = Math.min(el.duration || 0, el.currentTime + (a.seekOffset || 10));
         });
       } catch {}
-      try { navigator.mediaSession.setActionHandler("stop", () => { el.pause(); el.currentTime = 0; s().setIsPlaying(false); }); } catch {}
+      try { navigator.mediaSession.setActionHandler("stop", () => { el.pause(); el.currentTime = 0; }); } catch {}
     }
 
     window._audioEl = el;
@@ -365,9 +370,10 @@ export const usePlayerStore = create((set, get) => ({
 
   togglePlay: () => {
     const el = getAudio();
-    const { isPlaying } = get();
-    if (isPlaying) { el.pause(); set({ isPlaying: false }); }
-    else { el.play().catch(() => {}); set({ isPlaying: true }); }
+    // Let the audio element's play/pause events handle isPlaying state
+    // This prevents race conditions with MediaSession
+    if (el.paused) { el.play().catch(() => {}); }
+    else { el.pause(); }
   },
 
   toggleShuffle: () => set(s => ({ shuffle: !s.shuffle })),

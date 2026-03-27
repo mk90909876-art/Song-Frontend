@@ -32,7 +32,8 @@ export const nudgeVolume = () => {
   const v = el.volume;
   // Tiny imperceptible dip and restore
   el.volume = Math.max(0.001, v - 0.01);
-  requestAnimationFrame(() => { el.volume = v; });
+  // Use setTimeout (not requestAnimationFrame - rAF doesn't fire in background!)
+  setTimeout(() => { el.volume = v; }, 50);
 };
 
 // ── Periodic Nudge During Playback ────────────────────────────
