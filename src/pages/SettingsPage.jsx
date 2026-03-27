@@ -41,6 +41,7 @@ export const applyTheme = (theme) => {
 function SpotifyImport() {
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("idle"); // idle | loading | done | error
+  const [loadingMsg, setLoadingMsg] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -54,12 +55,49 @@ function SpotifyImport() {
       return;
     }
     setStatus("loading");
+    setLoadingMsg("Fetching playlist from Spotify…");
     setError("");
     setResult(null);
     setSaved(false);
     try {
+      // Step 1: Get Spotify track list from backend
       const { data } = await api.post("/api/music/import-spotify", { url: url.trim() });
-      setResult(data);
+
+      // Step 2: Match each track to JioSaavn on the frontend
+      setLoadingMsg(`Matching ${data.totalTracks} tracks on JioSaavn…`);
+      const { SAAVN, saavnToSong } = await import("../utils/saavn");
+      const matched = [];
+      let failed = 0;
+
+      // Process in small batches to avoid hammering the API
+      const tracks = data.matched || [];
+      const BATCH = 5;
+      for (let i = 0; i < tracks.length; i += BATCH) {
+        const batch = tracks.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          batch.map(async (track) => {
+            const q = encodeURIComponent(`${track.title} ${track.artist}`.trim());
+            const res = await fetch(`${SAAVN}/api/search/songs?query=${q}&limit=3`);
+            const d = await res.json();
+            const first = d?.data?.results?.[0];
+            if (!first) throw new Error("no result");
+            return saavnToSong(first);
+          })
+        );
+        results.forEach(r => {
+          if (r.status === "fulfilled") matched.push(r.value);
+          else failed++;
+        });
+        setLoadingMsg(`Matched ${matched.length} / ${tracks.length} tracks on JioSaavn…`);
+      }
+
+      setResult({
+        playlistName: data.playlistName,
+        matched,
+        matchedCount: matched.length,
+        failedCount: data.totalTracks - matched.length,
+        totalTracks: data.totalTracks,
+      });
       setStatus("done");
     } catch (err) {
       setError(err.response?.data?.error || "Import failed. Make sure the playlist is public.");
@@ -117,8 +155,8 @@ function SpotifyImport() {
       ) : status === "loading" ? (
         <div style={{ textAlign: "center", padding: "20px 0" }}>
           <div style={{ fontSize: "24px", marginBottom: "10px", animation: "spin 1s linear infinite", display: "inline-block" }}>↻</div>
-          <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Matching songs on YouTube…</div>
-          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>This may take 30–60 seconds</div>
+          <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>{loadingMsg || "Importing…"}</div>
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>This may take a moment</div>
         </div>
       ) : status === "done" && result ? (
         <div>
@@ -252,7 +290,7 @@ export default function SettingsPage() {
       <Section title="About">
         <div style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: "1.6" }}>
           <p>Song — a private music player for friends.</p>
-          <p style={{ marginTop: "6px", color: "var(--text-muted)" }}>Streams audio via YouTube · No ads · No tracking</p>
+          <p style={{ marginTop: "6px", color: "var(--text-muted)" }}>Streams audio via JioSaavn · No ads · No tracking</p>
         </div>
       </Section>
 

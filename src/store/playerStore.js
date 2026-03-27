@@ -32,258 +32,31 @@ const saveSearchHistory = (h) => {
 
 const session = loadSession();
 
-// ── YouTube channel names that are useless for Saavn search ──
-// ── Noise words in YouTube titles ────────────────────────────
-const NOISE_WORDS = new Set([
-  "official","video","audio","lyric","lyrics","lyrical","full","song","music",
-  "hd","4k","8k","visualizer","visualiser","animation","animated",
-  "unplugged","live","acoustic","remix","remaster","remastered",
-  "extended","version","original","promo","teaser","trailer",
-  "making","behind","scenes","bonus","track","new","latest",
-  "2020","2021","2022","2023","2024","2025","2026",
-]);
-
-// Inline uppercase noise phrases to strip after all other processing
-const INLINE_NOISE_RE = /\b(FULL\s+VIDEO\s+SONG|FULL\s+VIDEO|FULL\s+SONG|FULL\s+AUDIO|LYRIC\s+VIDEO|OFFICIAL\s+VIDEO|OFFICIAL\s+AUDIO|MUSIC\s+VIDEO)\b/g;
-
-const CHANNEL_NAMES = [
-  "t-series","tseries","sony music","zee music","tips official","tips films",
-  "yrf","eros now","saregama","speed records","rajshri","shemaroo",
-  "colors tv","star music","universal music","warner music","atlantic",
-  "umg","vevo","desi music","crown records","romance rewind",
-  "bollywood lofi","mr jatt","pagalworld","gaana","wynk",
-];
-
-const isNoise = (str) => {
-  const s = str.toLowerCase().trim();
-  if (!s) return true;
-  if (CHANNEL_NAMES.some(c => s.includes(c))) return true;
-  const words = s.split(/\s+/);
-  return words.length > 0 && words.every(w => NOISE_WORDS.has(w) || /^\d{4}$/.test(w));
-};
-
-const looksLikeArtistList = (str) => str.includes(",");
-const isAllCaps = (str) => str.length > 1 && str === str.toUpperCase() && /[A-Z]/.test(str);
-
-// Patterns that mean "what comes AFTER the colon is the real title"
-const COLON_LEFT_IS_NOISE = /^(full\s+video|full\s+song|official\s+video|lyrical?|audio\s+song|title\s+track|title\s+song)/i;
-
-// ── Title cleaner — handles ALL YouTube title patterns ────────
-const cleanForSearch = (ytTitle, ytArtist) => {
-  // Normalise smart/curly quotes to straight
-  let raw = (ytTitle || "")
-    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
-    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
-    .replace(/@\S+/g, "")
-    .trim();
-
-  // Strip "Title Song/Track" suffix early so it doesn't confuse | logic
-  raw = raw.replace(/\s+(title\s+song|title\s+track)\b/gi, "").trim();
-
-  // Strip "Song By / Sung By [artist]" pattern
-  raw = raw.replace(/\s+(song|sung)\s+by\s+.*/gi, "").trim();
-
-  // Handle colon BEFORE pipe — so "Full Video: Raanjhan | ..." becomes "Raanjhan | ..."
-  if (raw.includes(":")) {
-    const colonIdx = raw.indexOf(":");
-    const left = raw.slice(0, colonIdx).trim();
-    const right = raw.slice(colonIdx + 1).trim();
-    if (COLON_LEFT_IS_NOISE.test(left)) {
-      raw = right;
-    } else {
-      raw = left.trim();
-    }
-  }
-
-  // Handle pipe: "KK | Dil Ibaadat | ..." or "Arijit Singh | Song | ..."
-  // Only swap left→right if left looks like an artist name:
-  //   - 2 words, no noise words (e.g. "Arijit Singh")
-  //   - OR 1 word that is very short initials ≤ 3 chars (e.g. "KK", "AR")
-  if (raw.includes("|")) {
-    const segments = raw.split("|").map(s => s.trim()).filter(Boolean);
-    const first = segments[0];
-    const firstWords = first.split(/\s+/);
-    const firstHasNoise = firstWords.some(w => NOISE_WORDS.has(w.toLowerCase()));
-    const firstIsArtist =
-      (firstWords.length === 2 && !firstHasNoise) ||
-      (firstWords.length === 1 && first.length <= 3 && !firstHasNoise);
-    raw = firstIsArtist ? segments[1] || first : first;
-  }
-
-  // Remove noise parentheses: (Official Video), (Full Song), (4K HD) etc.
-  raw = raw.replace(/\(([^)]*)\)/gi, (match, inner) => {
-    const low = inner.toLowerCase();
-    return [...NOISE_WORDS].some(n => low.includes(n)) ? "" : match;
-  });
-
-  // Remove square brackets entirely
-  raw = raw.replace(/\[.*?\]/g, "").trim();
-
-  // Remove feat/ft/with and everything after
-  raw = raw.replace(/\s+(feat\.|ft\.|featuring)\s*.*/gi, "").trim();
-
-  // Normalise no-space dash: "-Official", "-Lyric" etc. → " - Official"
-  raw = raw.replace(/\s*-(?=[A-Z])/g, " - ");
-
-  let songTitle = raw;
-  let extractedArtist = "";
-
-  // Handle "A - B" pattern
-  if (raw.includes(" - ")) {
-    const dashIdx = raw.indexOf(" - ");
-    const left = raw.slice(0, dashIdx).trim();
-    const right = raw.slice(dashIdx + 3).trim();
-
-    // Strip any remaining "- noise" suffix from right
-    const stripNoiseSuffix = (s) => s.replace(/\s+-\s+\S.*$/, "").trim();
-    const cleanRight = stripNoiseSuffix(right);
-
-    const rightIsNoise = isNoise(cleanRight);
-    const leftIsArtistList = looksLikeArtistList(left);
-    const rightIsArtistList = looksLikeArtistList(cleanRight);
-    const leftWords = left.split(/\s+/).length;
-
-    if (rightIsNoise) {
-      songTitle = left;
-    } else if (leftIsArtistList) {
-      songTitle = cleanRight;
-      extractedArtist = left.split(",")[0].trim();
-    } else if (rightIsArtistList) {
-      songTitle = left;
-      extractedArtist = cleanRight.split(",")[0].trim();
-    } else if (leftWords <= 3 && !isNoise(left) && !isAllCaps(left)) {
-      extractedArtist = left;
-      songTitle = cleanRight;
-    } else {
-      songTitle = left;
-    }
-  }
-
-  // Strip inline uppercase noise phrases: "FULL VIDEO SONG" etc.
-  songTitle = songTitle.replace(INLINE_NOISE_RE, "").trim();
-
-  // Final cleanup
-  songTitle = songTitle.replace(/[-:]\s*$/, "").replace(/\s+/g, " ").trim();
-
-  // Determine final artist
-  let cleanArtist = (ytArtist || "").split(/[,&]/)[0].replace(/@\S+/g, "").replace(/vevo/gi, "").trim();
-
-  if (isNoise(cleanArtist)) {
-    cleanArtist = extractedArtist;
-  } else if (extractedArtist && !isNoise(extractedArtist)) {
-    cleanArtist = extractedArtist;
-  }
-
-  console.log(`🧹 "${ytTitle}" → title="${songTitle}" artist="${cleanArtist}"`);
-  return {
-    title: songTitle.slice(0, 60).trim(),
-    artist: cleanArtist.slice(0, 40).trim(),
-  };
-};
-
-// ── Scoring helpers ───────────────────────────────────────────
-
-// Normalise a string for comparison: lowercase, strip punctuation, split to word set
-const tokenize = (str) =>
-  new Set((str || "").toLowerCase().replace(/[^\w\s]/g, " ").split(/\s+/).filter(Boolean));
-
-// Jaccard similarity between two word sets
-const jaccard = (a, b) => {
-  if (!a.size || !b.size) return 0;
-  let intersection = 0;
-  a.forEach(w => { if (b.has(w)) intersection++; });
-  return intersection / (a.size + b.size - intersection);
-};
-
-// Duration score: 1.0 at 0s diff, linear decay, 0 at 90s diff
-const durationScore = (saavnDur, ytDur) => {
-  if (!ytDur || !saavnDur) return 0.5; // no duration info — neutral
-  const diff = Math.abs(Number(saavnDur) - ytDur);
-  return Math.max(0, 1 - diff / 90);
-};
-
-// Score a single Saavn result against our target
-const scoreSaavnResult = (saavnSong, cleanTitle, cleanArtist, ytDur) => {
-  const titleTokens = tokenize(cleanTitle);
-  const artistTokens = tokenize(cleanArtist);
-
-  const saavnTitleTokens = tokenize(saavnSong.name);
-  const saavnArtistStr = saavnSong.artists?.primary?.map(a => a.name).join(" ")
-    || saavnSong.primaryArtists
-    || saavnSong.more_info?.artistMap?.primary_artists?.map(a => a.name).join(" ")
-    || "";
-  const saavnArtistTokens = tokenize(saavnArtistStr);
-
-  const nameSim = jaccard(titleTokens, saavnTitleTokens);
-  const artistSim = jaccard(artistTokens, saavnArtistTokens);
-  const durSim = durationScore(saavnSong.duration, ytDur);
-
-  const score = nameSim * 0.50 + durSim * 0.35 + artistSim * 0.15;
-
-  return { score, nameSim, artistSim, durSim };
-};
-
-// ── Saavn search + scored match ───────────────────────────────
-const findSaavnSong = async (song) => {
-  const { title: ct, artist: ca } = cleanForSearch(song.title, song.artist);
-  const ytDur = song.duration || 0;
-  console.log(`🎵 Looking for: "${ct}" by "${ca}" (${ytDur}s)`);
-
-  const queries = [
-    `${ct} ${ca}`.trim(),
-    ct,
-    `${ct} ${ca.split(" ")[0]}`.trim(),
-  ].filter((q, i, arr) => q.length > 1 && arr.indexOf(q) === i);
-
-  let globalBest = null;
-  let globalBestScore = -1;
-
-  for (const q of queries) {
-    try {
-      console.log(`🔍 Saavn: "${q}"`);
-      const res = await fetch(`${SAAVN}/api/search/songs?query=${encodeURIComponent(q)}&limit=10`);
-      if (!res.ok) continue;
-      const data = await res.json();
-      const results = (data?.data?.results || data?.results || [])
-        .filter(s => s.downloadUrl?.length > 0);
-      if (!results.length) continue;
-
-      for (const s of results) {
-        const { score, nameSim, artistSim, durSim } = scoreSaavnResult(s, ct, ca, ytDur);
-        console.log(`  "${s.name}" → score=${score.toFixed(2)} (name=${nameSim.toFixed(2)} dur=${durSim.toFixed(2)} artist=${artistSim.toFixed(2)})`);
-        if (score > globalBestScore) {
-          globalBestScore = score;
-          globalBest = s;
-        }
-      }
-    } catch (e) {
-      console.warn(`Saavn "${q}" error:`, e.message);
-    }
-  }
-
-  // Minimum threshold: name similarity must be non-zero (at least one word overlap)
-  const { nameSim } = globalBest ? scoreSaavnResult(globalBest, ct, ca, ytDur) : { nameSim: 0 };
-  if (!globalBest || nameSim === 0) {
-    console.warn(`❌ No match: "${song.title}"`);
-    return null;
-  }
-
-  const urls = globalBest.downloadUrl || [];
-  const audio = urls.find(u => u.quality === "320kbps")
+// ── Resolve Saavn audio URL ───────────────────────────────────
+// Songs from search results already carry downloadUrl.
+// Songs loaded from the library (liked / playlists) don't — fetch by ID.
+const resolveSaavnUrl = async (song) => {
+  const urls = song.downloadUrl || [];
+  const direct = urls.find(u => u.quality === "320kbps")
     || urls.find(u => u.quality === "160kbps")
     || urls[urls.length - 1];
-  if (!audio?.url) {
-    console.warn(`❌ No stream URL for best match: "${globalBest.name}"`);
-    return null;
-  }
 
-  console.log(`✅ Saavn: "${globalBest.name}" score=${globalBestScore.toFixed(2)} @ ${audio.quality}`);
-  return { url: audio.url, quality: audio.quality, name: globalBest.name };
+  if (direct?.url) return direct.url;
+
+  // Fetch full song details from Saavn worker by ID
+  const res = await fetch(`${SAAVN}/api/songs?id=${song.id}`);
+  const data = await res.json();
+  const songData = data?.data?.[0];
+  if (!songData?.downloadUrl?.length) return null;
+
+  const fetched = songData.downloadUrl.find(u => u.quality === "320kbps")
+    || songData.downloadUrl.find(u => u.quality === "160kbps")
+    || songData.downloadUrl[songData.downloadUrl.length - 1];
+
+  return fetched?.url || null;
 };
 
 // ── Single Audio Element ──────────────────────────────────────
-// Track which song the audio element is currently loaded for
-// to avoid race conditions when songs change quickly
 let _currentLoadId = 0;
 
 const getAudio = () => {
@@ -292,14 +65,12 @@ const getAudio = () => {
     el.setAttribute("playsinline", "true");
     el.setAttribute("webkit-playsinline", "true");
     el.preload = "auto";
-    // Must be in DOM for Android media notification to appear
     el.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;";
     document.body.appendChild(el);
 
     el.addEventListener("timeupdate", () => {
       if (el.src && el.currentTime > 0) {
         usePlayerStore.getState().setProgress(el.currentTime);
-        // Keep notification seek bar in sync
         try {
           if ("mediaSession" in navigator && el.duration > 0) {
             navigator.mediaSession.setPositionState({
@@ -349,7 +120,6 @@ const setMediaSession = (song) => {
   try {
     const el = getAudio();
 
-    // Set handlers FIRST — Android requires handlers before showing notification
     navigator.mediaSession.setActionHandler("play", () => {
       el.play();
       usePlayerStore.getState().setIsPlaying(true);
@@ -371,9 +141,8 @@ const setMediaSession = (song) => {
       navigator.mediaSession.setActionHandler("seekforward", (a) => {
         el.currentTime = Math.min(el.duration || 0, el.currentTime + (a.seekOffset || 10));
       });
-    } catch {} // some browsers don't support these
+    } catch {}
 
-    // Set metadata after handlers
     navigator.mediaSession.metadata = new MediaMetadata({
       title: song.title,
       artist: song.artist,
@@ -384,7 +153,6 @@ const setMediaSession = (song) => {
     });
     navigator.mediaSession.playbackState = "playing";
 
-    // Position state shows seek bar in notification
     try {
       if (el.duration > 0) {
         navigator.mediaSession.setPositionState({
@@ -451,16 +219,14 @@ export const usePlayerStore = create((set, get) => ({
 
     const newQueue = fromQueue ? queue : [];
     set({ currentSong: song, isPlaying: false, progress: 0, duration: 0, history: newHistory, savedProgress: 0, queue: newQueue, saavnUnavailable: false });
-    saveSession({ currentSong: song, queue: newQueue, progress: 0.1 }); // Save a tiny bit of progress to mark as started
+    saveSession({ currentSong: song, queue: newQueue, progress: 0.1 });
 
-    // Set media session immediately with song info (even before audio loads)
     setMediaSession(song);
 
     const el = getAudio();
     el.pause();
     el.volume = get().volume;
 
-    // Tag this load so we can detect stale responses
     const loadId = ++_currentLoadId;
 
     const playAudio = (url, savedPos) => {
@@ -475,57 +241,27 @@ export const usePlayerStore = create((set, get) => ({
         });
     };
 
-    if (song.source === "saavn") {
-      // Saavn-sourced song — play directly, no matching needed
-      const urls = song.downloadUrl || [];
-      const audio = urls.find(u => u.quality === "320kbps")
-        || urls.find(u => u.quality === "160kbps")
-        || urls[urls.length - 1];
-      if (!audio?.url) {
+    // All songs are Saavn-sourced.
+    // If downloadUrl is present, use it directly.
+    // Otherwise fetch song details from Saavn by ID (library songs don't carry downloadUrl).
+    resolveSaavnUrl(song).then(url => {
+      if (loadId !== _currentLoadId) return;
+      if (!url) {
+        console.warn("No Saavn URL for:", song.title);
         set({ saavnUnavailable: true, isPlaying: false });
-      } else {
-        playAudio(audio.url, get().savedProgress);
+        return;
       }
-    } else {
-      // YouTube-sourced song — find matching Saavn track
-      findSaavnSong(song).then(result => {
-        if (loadId !== _currentLoadId) { console.log("Stale Saavn response, ignoring"); return; }
-        if (!result) { set({ saavnUnavailable: true, isPlaying: false }); return; }
-        playAudio(result.url, get().savedProgress);
-      });
-    }
+      playAudio(url, get().savedProgress);
+    }).catch(err => {
+      if (loadId !== _currentLoadId) return;
+      console.warn("Saavn resolve error:", err.message);
+      set({ saavnUnavailable: true, isPlaying: false });
+    });
 
-    // Auto queue refill
+    // Auto queue refill via Saavn suggestions
     if (autoQueue && newQueue.filter(s => s.id !== song.id).length < QUEUE_REFILL_AT) {
-      setTimeout(() => {
-        // ALWAYS try Saavn suggestions first now, regardless of source
-        get().fetchSuggestions(song);
-      }, 3000);
+      setTimeout(() => get().fetchSuggestions(song), 3000);
     }
-  },
-
-  fetchMix: async (song) => {
-    // If we have a Saavn match or it's a Saavn song, use suggestions instead
-    if (song.source === "saavn" || song.id?.length > 11) {
-      return get().fetchSuggestions(song);
-    }
-    
-    try {
-      const { queue, currentSong, history } = get();
-      if (queue.length >= QUEUE_MAX) return;
-      const token = localStorage.getItem("access_token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/music/mix/${song.id}`,
-        { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      if (!data.results?.length) return;
-      const ids = new Set([...queue.map(s => s.id), currentSong?.id, ...history.slice(0, 10).map(s => s.id)]);
-      const fresh = data.results.filter(s => !ids.has(s.id)).slice(0, QUEUE_MAX - queue.length);
-      if (fresh.length) {
-        const updated = [...get().queue, ...fresh];
-        set({ queue: updated });
-        saveSession({ currentSong: get().currentSong, queue: updated, progress: get().progress });
-      }
-    } catch (e) { console.error("fetchMix:", e); }
   },
 
   fetchSuggestions: async (song) => {

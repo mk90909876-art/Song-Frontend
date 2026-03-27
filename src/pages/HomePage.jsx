@@ -3,7 +3,6 @@ import { useAuthStore } from "../store/authStore";
 import { usePlayerStore } from "../store/playerStore";
 import { useLibraryStore } from "../store/libraryStore";
 import SongCard from "../components/SongCard";
-import api from "../utils/api";
 
 export default function HomePage() {
   const { user } = useAuthStore();
@@ -28,10 +27,6 @@ export default function HomePage() {
         const data = await res.json();
         if (data.success && data.data) {
           setRecommended(data.data.map(saavnToSong).slice(0, 10));
-        } else {
-          // Fallback to old backend related if Saavn fails
-          const { data: related } = await api.get(`/api/music/related/${seed.id}`);
-          setRecommended(related.results.slice(0, 8));
         }
       } catch (e) {
         console.error("Home suggestions failed:", e);
