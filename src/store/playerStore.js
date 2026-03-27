@@ -12,6 +12,8 @@ const saveSession = (state) => {
     localStorage.setItem("session_song", JSON.stringify(state.currentSong));
     localStorage.setItem("session_queue", JSON.stringify(state.queue));
     localStorage.setItem("session_progress", String(state.progress));
+    localStorage.setItem("session_history", JSON.stringify(state.history));
+    localStorage.setItem("session_station", state.stationId || "");
   } catch {}
 };
 const loadSession = () => {
@@ -20,8 +22,10 @@ const loadSession = () => {
       currentSong: JSON.parse(localStorage.getItem("session_song") || "null"),
       queue: JSON.parse(localStorage.getItem("session_queue") || "[]"),
       progress: parseFloat(localStorage.getItem("session_progress") || "0"),
+      history: JSON.parse(localStorage.getItem("session_history") || "[]"),
+      stationId: localStorage.getItem("session_station") || null,
     };
-  } catch { return { currentSong: null, queue: [], progress: 0 }; }
+  } catch { return { currentSong: null, queue: [], progress: 0, history: [], stationId: null }; }
 };
 const loadSearchHistory = () => {
   try { return JSON.parse(localStorage.getItem("search_history") || "[]"); } catch { return []; }
@@ -173,7 +177,7 @@ export const usePlayerStore = create((set, get) => ({
   currentSong: session.currentSong,
   isPlaying: false,
   queue: session.queue,
-  history: [],
+  history: session.history,
   shuffle: false,
   repeat: "none",
   volume: parseFloat(localStorage.getItem("volume") || "1"),
@@ -183,6 +187,7 @@ export const usePlayerStore = create((set, get) => ({
   savedProgress: session.progress,
   searchHistory: loadSearchHistory(),
   saavnUnavailable: false,
+  stationId: session.stationId,
 
   setDuration: (d) => set({ duration: d }),
   setProgress: (p) => {
@@ -218,8 +223,8 @@ export const usePlayerStore = create((set, get) => ({
       : history;
 
     const newQueue = fromQueue ? queue : [];
-    set({ currentSong: song, isPlaying: false, progress: 0, duration: 0, history: newHistory, savedProgress: 0, queue: newQueue, saavnUnavailable: false });
-    saveSession({ currentSong: song, queue: newQueue, progress: 0.1 });
+    set({ currentSong: song, isPlaying: false, progress: 0, duration: 0, history: newHistory, savedProgress: 0, queue: newQueue, saavnUnavailable: false, stationId: fromQueue ? get().stationId : null });
+    saveSession({ currentSong: song, queue: newQueue, progress: 0.1, history: newHistory, stationId: fromQueue ? get().stationId : null });
 
     setMediaSession(song);
 
@@ -266,20 +271,29 @@ export const usePlayerStore = create((set, get) => ({
 
   fetchSuggestions: async (song) => {
     try {
-      const { queue, currentSong, history } = get();
+      const { queue, currentSong, history, stationId } = get();
       if (queue.length >= QUEUE_MAX) return;
-      const res = await fetch(`${SAAVN}/api/songs/${song.id}/suggestions?limit=20`);
+
+      const url = stationId 
+        ? `${SAAVN}/api/songs/${song.id}/suggestions?limit=20&stationId=${encodeURIComponent(stationId)}`
+        : `${SAAVN}/api/songs/${song.id}/suggestions?limit=20`;
+
+      const res = await fetch(url);
       const data = await res.json();
       if (!data.success || !data.data?.length) return;
+
+      const newStationId = data.stationId || stationId;
       const ids = new Set([...queue.map(s => s.id), currentSong?.id, ...history.slice(0, 10).map(s => s.id)]);
+      
       const fresh = data.data
         .map(saavnToSong)
         .filter(s => !ids.has(s.id))
         .slice(0, QUEUE_MAX - queue.length);
-      if (fresh.length) {
+
+      if (fresh.length || newStationId !== stationId) {
         const updated = [...get().queue, ...fresh];
-        set({ queue: updated });
-        saveSession({ currentSong: get().currentSong, queue: updated, progress: get().progress });
+        set({ queue: updated, stationId: newStationId });
+        saveSession({ currentSong: get().currentSong, queue: updated, progress: get().progress, history: get().history, stationId: newStationId });
       }
     } catch (e) { console.error("fetchSuggestions:", e); }
   },
@@ -334,24 +348,24 @@ export const usePlayerStore = create((set, get) => ({
   addToQueue: (song) => {
     const q = [...get().queue, song];
     set({ queue: q });
-    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress });
+    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress, history: get().history, stationId: get().stationId });
   },
   playNext: (song) => {
     const q = [song, ...get().queue];
     set({ queue: q });
-    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress });
+    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress, history: get().history, stationId: get().stationId });
   },
   removeFromQueue: (index) => {
     const q = get().queue.filter((_, i) => i !== index);
     set({ queue: q });
-    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress });
+    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress, history: get().history, stationId: get().stationId });
   },
   moveQueueItem: (from, to) => {
     const q = [...get().queue];
     const [item] = q.splice(from, 1); q.splice(to, 0, item);
     set({ queue: q });
-    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress });
+    saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress, history: get().history, stationId: get().stationId });
   },
-  clearQueue: () => { set({ queue: [] }); saveSession({ currentSong: get().currentSong, queue: [], progress: get().progress }); },
+  clearQueue: () => { set({ queue: [] }); saveSession({ currentSong: get().currentSong, queue: [], progress: get().progress, history: get().history, stationId: get().stationId }); },
   toggleAutoQueue: () => set(s => { const v = !s.autoQueue; localStorage.setItem("autoQueue", v); return { autoQueue: v }; }),
 }));

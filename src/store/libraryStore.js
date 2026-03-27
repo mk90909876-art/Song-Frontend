@@ -1,9 +1,27 @@
 import { create } from "zustand";
 import api from "../utils/api";
 
+// ── Local Persistence ────────────────────────────────────────
+const saveLibraryLocal = (state) => {
+  try {
+    localStorage.setItem("local_liked", JSON.stringify(state.likedSongs));
+    localStorage.setItem("local_playlists", JSON.stringify(state.playlists));
+  } catch {}
+};
+const loadLibraryLocal = () => {
+  try {
+    return {
+      likedSongs: JSON.parse(localStorage.getItem("local_liked") || "[]"),
+      playlists: JSON.parse(localStorage.getItem("local_playlists") || "[]"),
+    };
+  } catch { return { likedSongs: [], playlists: [] }; }
+};
+
+const localData = loadLibraryLocal();
+
 export const useLibraryStore = create((set, get) => ({
-  likedSongs: [],
-  playlists: [],
+  likedSongs: localData.likedSongs,
+  playlists: localData.playlists,
   playlistSongs: {}, // { playlistId: [songs] }
   loaded: false,
 
@@ -28,6 +46,7 @@ export const useLibraryStore = create((set, get) => ({
         playlists: playlistsRes.data.playlists,
         loaded: true,
       });
+      saveLibraryLocal(get());
     } catch (err) {
       console.error("Failed to load library:", err);
     }
@@ -52,6 +71,7 @@ export const useLibraryStore = create((set, get) => ({
     };
     
     set(s => ({ likedSongs: [standardized, ...s.likedSongs] }));
+    saveLibraryLocal(get());
 
     try {
       await api.post("/api/library/liked", {
@@ -70,6 +90,7 @@ export const useLibraryStore = create((set, get) => ({
   unlikeSong: async (id) => {
     const prev = get().likedSongs;
     set(s => ({ likedSongs: s.likedSongs.filter(s => s.id !== id) }));
+    saveLibraryLocal(get());
 
     try {
       await api.delete(`/api/library/liked/${id}`);
@@ -83,11 +104,13 @@ export const useLibraryStore = create((set, get) => ({
   createPlaylist: async (name, description = "") => {
     const { data } = await api.post("/api/library/playlists", { name, description });
     set(s => ({ playlists: [data.playlist, ...s.playlists] }));
+    saveLibraryLocal(get());
     return data.playlist;
   },
 
   deletePlaylist: async (id) => {
     set(s => ({ playlists: s.playlists.filter(p => p.id !== id) }));
+    saveLibraryLocal(get());
     try {
       await api.delete(`/api/library/playlists/${id}`);
     } catch (err) {
