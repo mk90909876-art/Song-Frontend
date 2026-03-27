@@ -1,21 +1,17 @@
-// ── iOS Audio Session Manager ─────────────────────────────────
-// iOS Safari suspends all JS (including YouTube IFrame) when:
-//   1. Screen turns off
-//   2. User switches apps
-//   3. Browser goes to background
+// ── Audio Session Manager ─────────────────────────────────────
+// Keeps the PWA alive in the background on iOS/Android by
+// maintaining an active AudioContext + a silent audio heartbeat.
 //
-// Fix: Play a silent audio loop via Web Audio API.
-// iOS treats any active AudioContext as an "audio session" and
-// keeps the tab alive in the background as long as audio is running.
-// The silent buffer uses zero CPU and zero battery.
+// Also handles OS "audio ducking" recovery:
+// When a notification sound plays, the OS temporarily mutes web audio.
+// We detect this and automatically "nudge" the volume to force recovery.
 
 let audioCtx = null;
 let silentSource = null;
-let silentAudio = null; // New: Silent audio element heartbeat
+let silentAudio = null;
 const SILENT_DATA = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAP8A/wD/";
 
 const createSilentBuffer = (ctx) => {
-  // 2 seconds of silence at 22050 Hz
   const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
   const source = ctx.createBufferSource();
   source.buffer = buffer;
@@ -24,24 +20,42 @@ const createSilentBuffer = (ctx) => {
   return source;
 };
 
+// ── Volume Nudge ──────────────────────────────────────────────
+// This is the critical fix for the "notification kills sound" bug.
+// By briefly changing the audio element's volume, we force the OS
+// audio mixer to re-route audio output back to the speaker.
+export const nudgeVolume = () => {
+  const el = window._audioEl;
+  if (!el || el.paused) return;
+
+  const originalVolume = el.volume;
+  // Briefly dip/bump the volume by a tiny amount
+  const nudged = originalVolume > 0.01 ? originalVolume - 0.01 : originalVolume + 0.01;
+  el.volume = nudged;
+  // Restore original volume after a tick
+  setTimeout(() => { el.volume = originalVolume; }, 50);
+};
+
 export const initAudioSession = () => {
-  if (audioCtx) return; // already initialized
+  if (audioCtx) return;
 
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    setupStateListener(audioCtx);
+    audioCtx.onstatechange = () => {
+      if (audioCtx.state === "suspended") {
+        resumeAudioSession();
+      }
+    };
     silentSource = createSilentBuffer(audioCtx);
     silentSource.start(0);
 
-    // ── Silent Audio Element Heartbeat ──
+    // Silent Audio Element Heartbeat
     if (!silentAudio) {
       silentAudio = new Audio(SILENT_DATA);
       silentAudio.loop = true;
-      silentAudio.volume = 0.001; // Extremely low but not zero (to keep OS focus)
+      silentAudio.volume = 0.001;
       silentAudio.play().catch(() => {});
     }
-
-    console.log("Audio session initialized, state:", audioCtx.state);
   } catch (err) {
     console.warn("AudioContext init failed:", err);
   }
@@ -50,49 +64,38 @@ export const initAudioSession = () => {
 export const resumeAudioSession = async () => {
   if (!audioCtx) return;
   if (audioCtx.state === "suspended") {
-    try {
-      await audioCtx.resume();
-      console.log("Audio session resumed");
-    } catch (err) {
-      console.warn("AudioContext resume failed:", err);
-    }
+    try { await audioCtx.resume(); } catch {}
   }
   if (silentAudio && silentAudio.paused) {
     silentAudio.play().catch(() => {});
   }
+  // Always nudge volume when resuming — this is the key fix
+  nudgeVolume();
 };
 
-// Auto-resume if the OS suspends it (e.g. after a phone call or notification)
-const setupStateListener = (ctx) => {
-  ctx.onstatechange = () => {
-    if (ctx.state === "suspended") {
-       console.log("Audio session suspended by OS, attempting resume...");
-       resumeAudioSession();
-    }
-  };
-};
-
-// Call once on first user tap — iOS requires a gesture to unlock AudioContext
 export const unlockAudioSession = async () => {
   initAudioSession();
   await resumeAudioSession();
 };
 
-// Handle visibility change — when app comes back to foreground
-// iOS sometimes suspends the AudioContext, this wakes it back up
+// ── Visibility & Focus Recovery ───────────────────────────────
+// When the app returns to foreground after a notification or app switch,
+// resume the audio session AND nudge volume to recover from ducking.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     resumeAudioSession();
-    // Also nudge the YT players awake
-    setTimeout(() => {
-      if (window._ytPlayerA?.getPlayerState?.() === 2) { // PAUSED
-        // Don't auto-resume, just make sure audio context is alive
-      }
-    }, 300);
+    // Extra nudge after a short delay (some phones delay audio recovery)
+    setTimeout(nudgeVolume, 300);
+    setTimeout(nudgeVolume, 1000);
   }
 });
 
-// iOS-specific: page show event fires when coming back from background
 window.addEventListener("pageshow", () => {
   resumeAudioSession();
+});
+
+// Focus event — fires when returning from notification shade pull-down
+window.addEventListener("focus", () => {
+  resumeAudioSession();
+  setTimeout(nudgeVolume, 200);
 });
