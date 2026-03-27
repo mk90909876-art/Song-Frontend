@@ -140,8 +140,16 @@ const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }
                 <ScrollingText text={song.artist} style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "2px" }} />
               </div>
             </div>
-            <button onClick={e => { e.stopPropagation(); removeFromQueue(i); }}
-              style={{ background: "none", border: "none", color: "rgba(255,100,100,0.7)", cursor: "pointer", width: "26px", height: "26px", padding: "4px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <button 
+              onClick={e => { e.stopPropagation(); removeFromQueue(i); }}
+              onTouchStart={e => e.stopPropagation()}
+              onTouchEnd={e => e.stopPropagation()}
+              style={{ 
+                background: "none", border: "none", color: "rgba(255,100,100,0.7)", 
+                cursor: "pointer", width: "40px", height: "40px", padding: "8px", 
+                flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                marginRight: "-4px" 
+              }}>
               <Icons.Remove />
             </button>
           </div>
