@@ -1,14 +1,16 @@
 // ── Audio Session Manager ─────────────────────────────────────
-// Keeps the PWA alive in the background on iOS/Android by
-// maintaining an active AudioContext + a silent audio heartbeat.
+// Keeps the PWA alive in the background on iOS/Android.
 //
-// Also handles OS "audio ducking" recovery:
-// When a notification sound plays, the OS temporarily mutes web audio.
-// We detect this and automatically "nudge" the volume to force recovery.
+// CRITICAL FIX: OS "audio ducking" recovery.
+// When a notification sound plays (e.g. WhatsApp), the OS temporarily
+// mutes web audio. The song keeps playing but with no sound.
+// We run a periodic volume nudge every 3 seconds while playing to
+// continuously force the OS audio mixer to keep our audio route active.
 
 let audioCtx = null;
 let silentSource = null;
 let silentAudio = null;
+let nudgeInterval = null;
 const SILENT_DATA = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAP8A/wD/";
 
 const createSilentBuffer = (ctx) => {
@@ -21,19 +23,37 @@ const createSilentBuffer = (ctx) => {
 };
 
 // ── Volume Nudge ──────────────────────────────────────────────
-// This is the critical fix for the "notification kills sound" bug.
-// By briefly changing the audio element's volume, we force the OS
-// audio mixer to re-route audio output back to the speaker.
+// Programmatically does what the user does manually (change volume)
+// to force the OS audio mixer to re-route audio to the speaker.
 export const nudgeVolume = () => {
   const el = window._audioEl;
   if (!el || el.paused) return;
 
-  const originalVolume = el.volume;
-  // Briefly dip/bump the volume by a tiny amount
-  const nudged = originalVolume > 0.01 ? originalVolume - 0.01 : originalVolume + 0.01;
-  el.volume = nudged;
-  // Restore original volume after a tick
-  setTimeout(() => { el.volume = originalVolume; }, 50);
+  const v = el.volume;
+  // Tiny imperceptible dip and restore
+  el.volume = Math.max(0.001, v - 0.01);
+  requestAnimationFrame(() => { el.volume = v; });
+};
+
+// ── Periodic Nudge During Playback ────────────────────────────
+// This is the key: notifications can arrive at ANY time without
+// triggering visibility/focus events. By nudging every 3 seconds
+// while audio is playing, we ensure recovery happens automatically.
+export const startNudgeHeartbeat = () => {
+  stopNudgeHeartbeat(); // clear any existing
+  nudgeInterval = setInterval(() => {
+    const el = window._audioEl;
+    if (el && !el.paused && el.currentTime > 0) {
+      nudgeVolume();
+    }
+  }, 3000); // every 3 seconds
+};
+
+export const stopNudgeHeartbeat = () => {
+  if (nudgeInterval) {
+    clearInterval(nudgeInterval);
+    nudgeInterval = null;
+  }
 };
 
 export const initAudioSession = () => {
@@ -49,7 +69,6 @@ export const initAudioSession = () => {
     silentSource = createSilentBuffer(audioCtx);
     silentSource.start(0);
 
-    // Silent Audio Element Heartbeat
     if (!silentAudio) {
       silentAudio = new Audio(SILENT_DATA);
       silentAudio.loop = true;
@@ -69,7 +88,6 @@ export const resumeAudioSession = async () => {
   if (silentAudio && silentAudio.paused) {
     silentAudio.play().catch(() => {});
   }
-  // Always nudge volume when resuming — this is the key fix
   nudgeVolume();
 };
 
@@ -79,22 +97,14 @@ export const unlockAudioSession = async () => {
 };
 
 // ── Visibility & Focus Recovery ───────────────────────────────
-// When the app returns to foreground after a notification or app switch,
-// resume the audio session AND nudge volume to recover from ducking.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     resumeAudioSession();
-    // Extra nudge after a short delay (some phones delay audio recovery)
     setTimeout(nudgeVolume, 300);
-    setTimeout(nudgeVolume, 1000);
   }
 });
 
-window.addEventListener("pageshow", () => {
-  resumeAudioSession();
-});
-
-// Focus event — fires when returning from notification shade pull-down
+window.addEventListener("pageshow", () => resumeAudioSession());
 window.addEventListener("focus", () => {
   resumeAudioSession();
   setTimeout(nudgeVolume, 200);

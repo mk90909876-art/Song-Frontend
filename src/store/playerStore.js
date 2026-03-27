@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { saavnToSong, SAAVN } from "../utils/saavn";
-import { resumeAudioSession, nudgeVolume } from "../utils/audioSession";
+import { resumeAudioSession, nudgeVolume, startNudgeHeartbeat, stopNudgeHeartbeat } from "../utils/audioSession";
 
 const MAX_HISTORY = 50;
 const MAX_SEARCH_HISTORY = 20;
@@ -106,7 +106,7 @@ const getAudio = () => {
     el.addEventListener("play", () => {
       usePlayerStore.getState().setIsPlaying(true);
       resumeAudioSession();
-      // Nudge volume after a brief delay to recover from OS audio ducking
+      startNudgeHeartbeat(); // Periodic anti-duck protection
       setTimeout(nudgeVolume, 100);
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "playing";
@@ -117,6 +117,7 @@ const getAudio = () => {
 
     el.addEventListener("pause", () => {
       usePlayerStore.getState().setIsPlaying(false);
+      stopNudgeHeartbeat(); // Stop nudging when not playing
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
     });
 
