@@ -53,19 +53,22 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const { data } = await axios.post(
-          `${import.meta.env.VITE_API_URL}/api/auth/refresh`,
-          { refresh_token: refreshToken }
-        );
+        const refreshUrl = `${import.meta.env.VITE_API_URL || "http://localhost:3001"}/api/auth/refresh`;
+        const { data } = await axios.post(refreshUrl, { refresh_token: refreshToken });
+        
         localStorage.setItem("access_token", data.access_token);
         localStorage.setItem("refresh_token", data.refresh_token);
-        api.defaults.headers.common.Authorization = `Bearer ${data.access_token}`;
+        
+        // Update authStore state if it exists (imported dynamically to avoid circular dependency)
+        // No need to set defaults.headers as the request interceptor reads from localStorage
+        
         processQueue(null, data.access_token);
         originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
         return api(originalRequest);
       } catch (refreshErr) {
         processQueue(refreshErr, null);
-        localStorage.clear();
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
         window.location.href = "/login";
         return Promise.reject(refreshErr);
       } finally {

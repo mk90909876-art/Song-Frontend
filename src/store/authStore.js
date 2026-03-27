@@ -18,10 +18,19 @@ const decodeToken = (token) => {
 const storedToken = localStorage.getItem("access_token");
 const storedUser = storedToken ? decodeToken(storedToken) : null;
 
-export const useAuthStore = create((set) => ({
+export const useAuthStore = create((set, get) => ({
   user: storedUser,
   token: storedToken,
-  loading: false,
+  loading: true,
+
+  setToken: (token) => {
+    if (token) {
+      const user = decodeToken(token);
+      set({ user, token, loading: false });
+    } else {
+      set({ user: null, token: null, loading: false });
+    }
+  },
 
   login: async (email, password) => {
     const { data } = await api.post("/api/auth/login", { email, password });
@@ -43,7 +52,8 @@ export const useAuthStore = create((set) => ({
 
   logout: async () => {
     try { await api.post("/api/auth/logout"); } catch {}
-    localStorage.clear();
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
     // Clear library cache on logout
     useLibraryStore.getState().clearLibrary();
     set({ user: null, token: null });
@@ -51,10 +61,24 @@ export const useAuthStore = create((set) => ({
   },
 
   fetchMe: async () => {
-    set({ loading: false });
-    // Load library if token exists
-    if (localStorage.getItem("access_token")) {
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      set({ user: null, token: null, loading: false });
+      return;
+    }
+    
+    try {
+      const { data } = await api.get("/api/auth/me");
+      set({ user: data, token, loading: false });
       useLibraryStore.getState().loadLibrary();
+    } catch (err) {
+      // If 401, the interceptor will handle it.
+      // If it fails permanently:
+      if (err.response?.status === 401) {
+        set({ user: null, token: null, loading: false });
+      } else {
+        set({ loading: false });
+      }
     }
   },
 }));
