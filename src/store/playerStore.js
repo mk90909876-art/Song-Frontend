@@ -137,9 +137,8 @@ const getAudio = () => {
       }
     });
 
-    el.addEventListener("emptied", () => {
-      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "none";
-    });
+    // NOTE: Do NOT listen to 'emptied' — it fires during song transitions
+    // and corrupts playbackState before the new song can set it back.
 
     // ── Singleton Media Session Handlers ──
     if ("mediaSession" in navigator) {
@@ -277,7 +276,13 @@ export const usePlayerStore = create((set, get) => ({
       el.src = url;
       el.load();
       el.play()
-        .then(() => { if (savedPos > 3) el.currentTime = savedPos; })
+        .then(() => {
+          if (savedPos > 3) el.currentTime = savedPos;
+          // Explicitly sync MediaSession after play succeeds
+          if ("mediaSession" in navigator) {
+            navigator.mediaSession.playbackState = "playing";
+          }
+        })
         .catch(err => {
           console.warn("Autoplay blocked:", err.message);
           window._pendingPlay = true;
