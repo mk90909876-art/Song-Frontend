@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "dev.pages.song_frontend.twa",
+    "sha256_cert_fingerprints": ["AE:02:1A:14:D2:2C:F8:1E:9D:FE:75:30:12:F4:C6:94:B9:56:D1:D4:C3:DE:5D:E4:EE:03:5F:C4:28:1E:C2:9D"]
+  }
+}]
