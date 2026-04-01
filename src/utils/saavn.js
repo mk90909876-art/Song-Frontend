@@ -1,4 +1,4 @@
-const SAAVN = "https://jiosaavn-api.mk90909876.workers.dev";
+const SAAVN = import.meta.env.VITE_SAAVN_URL;
 
 // Map a Saavn Worker SongModel to our internal song object
 export const saavnToSong = (s) => ({
