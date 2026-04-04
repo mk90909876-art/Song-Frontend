@@ -27,6 +27,9 @@ self.addEventListener("fetch", (e) => {
     url.hostname.includes("googlevideo") ||
     url.hostname.includes("googleapis") ||
     url.hostname.includes("supabase.co") ||
+    url.hostname.includes("saavncdn.com") ||
+    url.hostname.includes("jiosaavn") ||
+    url.hostname.includes("workers.dev") ||
     url.pathname.startsWith("/api/")
   ) return;
 

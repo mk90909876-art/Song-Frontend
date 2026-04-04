@@ -63,6 +63,7 @@ const resolveSaavnUrl = async (song) => {
 
 // ── Single Audio Element ──────────────────────────────────────
 let _currentLoadId = 0;
+let _isTransitioning = false; // Flag to prevent Android killing notification between songs
 
 const getAudio = () => {
   if (!window._audioEl) {
@@ -73,6 +74,7 @@ const getAudio = () => {
     el.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;";
     document.body.appendChild(el);
 
+    // ── Single timeupdate handler (consolidated) ──
     el.addEventListener("timeupdate", () => {
       if (el.src && el.currentTime > 0) {
         usePlayerStore.getState().setProgress(el.currentTime);
@@ -80,7 +82,7 @@ const getAudio = () => {
           if ("mediaSession" in navigator && el.duration > 0) {
             navigator.mediaSession.setPositionState({
               duration: el.duration,
-              playbackRate: 1,
+              playbackRate: el.playbackRate || 1,
               position: el.currentTime,
             });
           }
@@ -88,25 +90,36 @@ const getAudio = () => {
       }
     });
 
+    // ── Single loadedmetadata handler (consolidated) ──
     el.addEventListener("loadedmetadata", () => {
       if (el.duration > 0) usePlayerStore.getState().setDuration(el.duration);
+      const song = usePlayerStore.getState().currentSong;
+      if (song) setMediaSession(song);
     });
 
     el.addEventListener("ended", () => {
       if (el.currentTime > 1) usePlayerStore.getState().nextSong();
     });
 
+    // ── Error recovery: auto-skip to next song instead of dead stop ──
     el.addEventListener("error", () => {
       const src = el.src;
       if (!src || src === window.location.href || src.endsWith("/")) return;
-      console.warn("Audio error:", src.slice(0, 80));
-      usePlayerStore.getState().setIsPlaying(false);
+      console.warn("Audio error, auto-skipping:", src.slice(0, 80));
+      const { queue } = usePlayerStore.getState();
+      if (queue.length > 0) {
+        // Auto-skip to next song after a brief delay
+        setTimeout(() => usePlayerStore.getState().nextSong(), 1500);
+      } else {
+        usePlayerStore.getState().setIsPlaying(false);
+      }
     });
 
     el.addEventListener("play", () => {
+      _isTransitioning = false;
       usePlayerStore.getState().setIsPlaying(true);
       resumeAudioSession();
-      startNudgeHeartbeat(); // Periodic anti-duck protection
+      startNudgeHeartbeat();
       setTimeout(nudgeVolume, 100);
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "playing";
@@ -115,26 +128,12 @@ const getAudio = () => {
       }
     });
 
+    // ── Pause handler: skip mediaSession update during song transitions ──
     el.addEventListener("pause", () => {
+      if (_isTransitioning) return; // Don't tell OS we paused during song switch
       usePlayerStore.getState().setIsPlaying(false);
-      stopNudgeHeartbeat(); // Stop nudging when not playing
+      stopNudgeHeartbeat();
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
-    });
-
-    el.addEventListener("loadedmetadata", () => {
-      const song = usePlayerStore.getState().currentSong;
-      if (song) setMediaSession(song);
-    });
-
-    el.addEventListener("timeupdate", () => {
-      // Throttled update to MediaSession position
-      if ("mediaSession" in navigator && el.duration > 0 && Math.floor(el.currentTime) % 5 === 0) {
-        navigator.mediaSession.setPositionState({
-          duration: el.duration,
-          playbackRate: el.playbackRate || 1,
-          position: el.currentTime,
-        });
-      }
     });
 
     // NOTE: Do NOT listen to 'emptied' — it fires during song transitions
@@ -142,8 +141,6 @@ const getAudio = () => {
 
     // ── Singleton Media Session Handlers ──
     if ("mediaSession" in navigator) {
-      // IMPORTANT: Use explicit play/pause instead of togglePlay
-      // to prevent state confusion when OS sends rapid events
       navigator.mediaSession.setActionHandler("play", () => {
         el.play().catch(() => {});
       });
@@ -243,14 +240,24 @@ export const usePlayerStore = create((set, get) => ({
 
   // ── Play a song ───────────────────────────────────────────
   playSong: (song, options = {}) => {
-    const { fromQueue = false, updatedQueue = null, initialProgress = 0 } = options;
+    const { fromQueue = false, fromHistory = false, updatedQueue = null, initialProgress = 0 } = options;
     const { history, currentSong, autoQueue, queue } = get();
 
-    const newHistory = currentSong
-      ? [currentSong, ...history.filter(h => h.id !== currentSong.id)].slice(0, MAX_HISTORY)
-      : history;
+    let newHistory;
+    let newQueue;
 
-    const newQueue = updatedQueue !== null ? updatedQueue : (fromQueue ? queue : []);
+    if (fromHistory) {
+      // Going BACK: pop target from history, push current song to queue front
+      newHistory = history.filter(h => h.id !== song.id);
+      newQueue = currentSong ? [currentSong, ...queue] : queue;
+    } else {
+      // Normal: push current song to history
+      newHistory = currentSong
+        ? [currentSong, ...history.filter(h => h.id !== currentSong.id)].slice(0, MAX_HISTORY)
+        : history;
+      newQueue = updatedQueue !== null ? updatedQueue : (fromQueue ? queue : []);
+    }
+
     set({ 
       currentSong: song, 
       isPlaying: false, 
@@ -260,14 +267,17 @@ export const usePlayerStore = create((set, get) => ({
       savedProgress: initialProgress, 
       queue: newQueue, 
       saavnUnavailable: false, 
-      stationId: fromQueue ? get().stationId : null 
+      stationId: (fromQueue || fromHistory) ? get().stationId : null 
     });
-    saveSession({ currentSong: song, queue: newQueue, progress: initialProgress, history: newHistory, stationId: fromQueue ? get().stationId : null });
+    saveSession({ currentSong: song, queue: newQueue, progress: initialProgress, history: newHistory, stationId: (fromQueue || fromHistory) ? get().stationId : null });
 
     setMediaSession(song);
 
     const el = getAudio();
-    el.pause();
+    // Mark as transitioning so the pause handler doesn't tell Android we stopped
+    _isTransitioning = true;
+    // Pre-set mediaSession to "playing" so OS doesn't kill notification
+    if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
     el.volume = get().volume;
 
     const loadId = ++_currentLoadId;
@@ -342,7 +352,7 @@ export const usePlayerStore = create((set, get) => ({
     } catch (e) { console.error("fetchSuggestions:", e); }
   },
 
-  nextSong: () => {
+  nextSong: async () => {
     const { queue, shuffle, repeat, history } = get();
     if (repeat === "one") {
       const el = getAudio(); el.currentTime = 0; el.play();
@@ -355,6 +365,15 @@ export const usePlayerStore = create((set, get) => ({
     }
     const idx = shuffle ? Math.floor(Math.random() * queue.length) : 0;
     const next = queue[idx];
+    // Pre-resolve downloadUrl while we still have network access (critical for iOS background)
+    if (!next.downloadUrl?.length) {
+      try {
+        const res = await fetch(`${SAAVN}/api/songs/${next.id}`);
+        const data = await res.json();
+        const songData = data?.data?.[0];
+        if (songData?.downloadUrl) next.downloadUrl = songData.downloadUrl;
+      } catch {}
+    }
     const newQueue = queue.filter((_, i) => i !== idx);
     get().playSong(next, { fromQueue: true, updatedQueue: newQueue });
   },
@@ -362,7 +381,7 @@ export const usePlayerStore = create((set, get) => ({
   prevSong: () => {
     const { history, progress } = get();
     if (progress > 3) { const el = getAudio(); el.currentTime = 0; set({ progress: 0 }); return; }
-    if (history.length) get().playSong(history[0], { fromQueue: true });
+    if (history.length) get().playSong(history[0], { fromHistory: true });
   },
 
   playFromQueue: (index) => {

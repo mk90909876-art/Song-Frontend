@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import api from "../utils/api";
+import axios from "axios";
 import { useLibraryStore } from "./libraryStore";
 
 const decodeToken = (token) => {
@@ -18,6 +19,36 @@ const decodeToken = (token) => {
 const storedToken = localStorage.getItem("access_token");
 const storedUser = storedToken ? decodeToken(storedToken) : null;
 
+// ── Proactive Token Refresh Timer ─────────────────────────────
+let _refreshTimer = null;
+const scheduleTokenRefresh = () => {
+  if (_refreshTimer) clearTimeout(_refreshTimer);
+  const token = localStorage.getItem("access_token");
+  if (!token) return;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    const expiresAt = payload.exp * 1000;
+    const refreshIn = expiresAt - Date.now() - 60000; // 1 min before expiry
+    if (refreshIn > 0) {
+      _refreshTimer = setTimeout(async () => {
+        const refreshToken = localStorage.getItem("refresh_token");
+        if (!refreshToken) return;
+        try {
+          const refreshUrl = `${import.meta.env.VITE_API_URL || "http://localhost:3001"}/api/auth/refresh`;
+          const { data } = await axios.post(refreshUrl, { refresh_token: refreshToken });
+          localStorage.setItem("access_token", data.access_token);
+          localStorage.setItem("refresh_token", data.refresh_token);
+          const user = decodeToken(data.access_token);
+          useAuthStore.setState({ user, token: data.access_token });
+          scheduleTokenRefresh(); // Schedule next refresh
+        } catch (err) {
+          console.warn("Proactive token refresh failed:", err.message);
+        }
+      }, refreshIn);
+    }
+  } catch {}
+};
+
 export const useAuthStore = create((set, get) => ({
   user: storedUser,
   token: storedToken,
@@ -27,6 +58,7 @@ export const useAuthStore = create((set, get) => ({
     if (token) {
       const user = decodeToken(token);
       set({ user, token, loading: false });
+      scheduleTokenRefresh();
     } else {
       set({ user: null, token: null, loading: false });
     }
@@ -39,6 +71,8 @@ export const useAuthStore = create((set, get) => ({
     const user = decodeToken(data.access_token);
     set({ user, token: data.access_token });
 
+    // Schedule proactive refresh
+    scheduleTokenRefresh();
     // Load library after login
     useLibraryStore.getState().loadLibrary();
 
@@ -51,6 +85,7 @@ export const useAuthStore = create((set, get) => ({
   },
 
   logout: async () => {
+    if (_refreshTimer) clearTimeout(_refreshTimer);
     try { await api.post("/api/auth/logout"); } catch {}
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
@@ -70,15 +105,23 @@ export const useAuthStore = create((set, get) => ({
     try {
       const { data } = await api.get("/api/auth/me");
       set({ user: data, token, loading: false });
+      scheduleTokenRefresh();
       useLibraryStore.getState().loadLibrary();
     } catch (err) {
-      // If 401, the interceptor will handle it.
-      // If it fails permanently:
       if (err.response?.status === 401) {
+        // Token refresh was attempted by interceptor and failed
         set({ user: null, token: null, loading: false });
       } else {
-        set({ loading: false });
+        // Network error / timeout — DON'T log out, use decoded token
+        console.warn("fetchMe network error, using cached token:", err.message);
+        const user = decodeToken(token);
+        set({ user, token, loading: false });
+        scheduleTokenRefresh();
+        useLibraryStore.getState().loadLibrary();
       }
     }
   },
 }));
+
+// Start proactive refresh on module load if token exists
+if (storedToken) scheduleTokenRefresh();

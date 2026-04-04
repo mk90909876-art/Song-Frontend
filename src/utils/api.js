@@ -34,7 +34,8 @@ api.interceptors.response.use(
 
       // No refresh token → straight to login
       if (!refreshToken) {
-        localStorage.clear();
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
         window.location.href = "/login";
         return Promise.reject(err);
       }

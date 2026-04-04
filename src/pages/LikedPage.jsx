@@ -16,9 +16,7 @@ export default function LikedPage() {
   const playAll = () => {
     if (!likedSongs.length) return;
     const [first, ...rest] = likedSongs;
-    usePlayerStore.getState().clearQueue();
-    rest.forEach(s => addToQueue(s));
-    playSong(first, { fromQueue: true });
+    playSong(first, { fromQueue: true, updatedQueue: rest });
   };
 
   return (

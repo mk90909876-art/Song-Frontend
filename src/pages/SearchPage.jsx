@@ -44,9 +44,8 @@ const PlaylistCard = ({ playlist }) => {
       } catch { return; }
     }
     if (!songList.length) return;
-    usePlayerStore.getState().clearQueue();
-    songList.slice(1).forEach(s => addToQueue(s));
-    playSong(songList[0], { fromQueue: true });
+    const [first, ...rest] = songList;
+    playSong(first, { fromQueue: true, updatedQueue: rest });
   };
 
   const saveToLibrary = async (e) => {
@@ -113,9 +112,8 @@ const PlaylistCard = ({ playlist }) => {
                 onMouseEnter={e => e.currentTarget.style.background = "var(--bg-secondary)"}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                 onClick={() => {
-                  usePlayerStore.getState().clearQueue();
-                  songs.slice(i + 1).forEach(s => addToQueue(s));
-                  playSong(song, { fromQueue: true });
+                  const rest = songs.slice(i + 1);
+                  playSong(song, { fromQueue: true, updatedQueue: rest });
                 }}>
                 <div style={{ width: "18px", textAlign: "center", color: "var(--text-muted)", fontSize: "12px", flexShrink: 0 }}>{i + 1}</div>
                 <img src={song.thumbnail} alt="" style={{ width: "36px", height: "36px", borderRadius: "4px", objectFit: "cover", flexShrink: 0 }} />

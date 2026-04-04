@@ -28,7 +28,7 @@ export function BottomSheet({ song, onClose }) {
   };
 
   const playNext = () => {
-    usePlayerStore.setState({ queue: [song, ...queue] });
+    usePlayerStore.getState().playNext(song);
     onClose();
   };
 

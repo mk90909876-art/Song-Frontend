@@ -63,9 +63,7 @@ export default function LibraryPage() {
   const playAll = (playlistSongs) => {
     if (!playlistSongs.length) return;
     const [first, ...rest] = playlistSongs;
-    usePlayerStore.getState().clearQueue();
-    rest.forEach(s => addToQueue(s));
-    playSong(first, { fromQueue: true });
+    playSong(first, { fromQueue: true, updatedQueue: rest });
   };
 
   const songs = selectedPlaylist ? (playlistSongs[selectedPlaylist.id] || []) : [];
