@@ -339,10 +339,25 @@ export const usePlayerStore = create((set, get) => ({
       const newStationId = data.stationId || stationId;
       const ids = new Set([...queue.map(s => s.id), currentSong?.id, ...history.slice(0, 10).map(s => s.id)]);
       
-      const fresh = data.data
+      const freshRaw = data.data
         .map(saavnToSong)
         .filter(s => !ids.has(s.id))
         .slice(0, QUEUE_MAX - queue.length);
+
+      // Pre-resolve download URLs while in foreground
+      const fresh = await Promise.all(
+        freshRaw.map(async (s) => {
+          if (!s.downloadUrl?.length) {
+            try {
+              const r = await fetch(`${SAAVN}/api/songs/${s.id}`);
+              const d = await r.json();
+              const sd = d?.data?.[0];
+              if (sd?.downloadUrl) s.downloadUrl = sd.downloadUrl;
+            } catch {}
+          }
+          return s;
+        })
+      );
 
       if (fresh.length || newStationId !== stationId) {
         const updated = [...get().queue, ...fresh];
@@ -365,15 +380,7 @@ export const usePlayerStore = create((set, get) => ({
     }
     const idx = shuffle ? Math.floor(Math.random() * queue.length) : 0;
     const next = queue[idx];
-    // Pre-resolve downloadUrl while we still have network access (critical for iOS background)
-    if (!next.downloadUrl?.length) {
-      try {
-        const res = await fetch(`${SAAVN}/api/songs/${next.id}`);
-        const data = await res.json();
-        const songData = data?.data?.[0];
-        if (songData?.downloadUrl) next.downloadUrl = songData.downloadUrl;
-      } catch {}
-    }
+
     const newQueue = queue.filter((_, i) => i !== idx);
     get().playSong(next, { fromQueue: true, updatedQueue: newQueue });
   },
