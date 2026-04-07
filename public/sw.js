@@ -48,8 +48,9 @@ self.addEventListener("fetch", (e) => {
       return fetch(e.request).then(res => {
         if (res.ok) {
           const ext = url.pathname.split(".").pop();
-          if (["js","css","woff","woff2","ttf","png","svg","ico","webp"].includes(ext)) {
-            caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+          if (["js", "css", "woff", "woff2", "ttf", "png", "svg", "ico", "webp"].includes(ext)) {
+            const toCache = res.clone(); // clone BEFORE returning
+            caches.open(CACHE).then(c => c.put(e.request, toCache));
           }
         }
         return res;
