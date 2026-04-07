@@ -1,6 +1,5 @@
 import { create } from "zustand";
-import api from "../utils/api";
-import axios from "axios";
+import api, { refreshTokenOnce } from "../utils/api";
 import { useLibraryStore } from "./libraryStore";
 
 const decodeToken = (token) => {
@@ -31,22 +30,17 @@ const scheduleTokenRefresh = () => {
     const refreshIn = expiresAt - Date.now() - 60000; // 1 min before expiry
     if (refreshIn > 0) {
       _refreshTimer = setTimeout(async () => {
-        const refreshToken = localStorage.getItem("refresh_token");
-        if (!refreshToken) return;
         try {
-          const refreshUrl = `${import.meta.env.VITE_API_URL || "http://localhost:3001"}/api/auth/refresh`;
-          const { data } = await axios.post(refreshUrl, { refresh_token: refreshToken });
-          localStorage.setItem("access_token", data.access_token);
-          localStorage.setItem("refresh_token", data.refresh_token);
-          const user = decodeToken(data.access_token);
-          useAuthStore.setState({ user, token: data.access_token });
-          scheduleTokenRefresh(); // Schedule next refresh
+          const newToken = await refreshTokenOnce();
+          const user = decodeToken(newToken);
+          useAuthStore.setState({ user, token: newToken });
+          scheduleTokenRefresh();
         } catch (err) {
           console.warn("Proactive token refresh failed:", err.message);
         }
       }, refreshIn);
     }
-  } catch {}
+  } catch { }
 };
 
 export const useAuthStore = create((set, get) => ({
@@ -86,7 +80,7 @@ export const useAuthStore = create((set, get) => ({
 
   logout: async () => {
     if (_refreshTimer) clearTimeout(_refreshTimer);
-    try { await api.post("/api/auth/logout"); } catch {}
+    try { await api.post("/api/auth/logout"); } catch { }
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     // Clear library cache on logout
@@ -101,7 +95,7 @@ export const useAuthStore = create((set, get) => ({
       set({ user: null, token: null, loading: false });
       return;
     }
-    
+
     try {
       const { data } = await api.get("/api/auth/me");
       set({ user: data, token, loading: false });

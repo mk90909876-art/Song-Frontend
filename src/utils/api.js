@@ -56,13 +56,13 @@ api.interceptors.response.use(
       try {
         const refreshUrl = `${import.meta.env.VITE_API_URL || "http://localhost:3001"}/api/auth/refresh`;
         const { data } = await axios.post(refreshUrl, { refresh_token: refreshToken });
-        
+
         localStorage.setItem("access_token", data.access_token);
         localStorage.setItem("refresh_token", data.refresh_token);
-        
+
         // Update authStore state if it exists (imported dynamically to avoid circular dependency)
         // No need to set defaults.headers as the request interceptor reads from localStorage
-        
+
         processQueue(null, data.access_token);
         originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
         return api(originalRequest);
@@ -80,5 +80,37 @@ api.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+// Add this at the bottom, before export default
+export const refreshTokenOnce = async () => {
+  if (isRefreshing) {
+    return new Promise((resolve, reject) => {
+      failedQueue.push({ resolve, reject });
+    });
+  }
+
+  const refreshToken = localStorage.getItem("refresh_token");
+  if (!refreshToken) return Promise.reject(new Error("No refresh token"));
+
+  isRefreshing = true;
+
+  try {
+    const refreshUrl = `${import.meta.env.VITE_API_URL || "http://localhost:3001"}/api/auth/refresh`;
+    const { data } = await axios.post(refreshUrl, { refresh_token: refreshToken });
+
+    localStorage.setItem("access_token", data.access_token);
+    localStorage.setItem("refresh_token", data.refresh_token);
+
+    processQueue(null, data.access_token);
+    return data.access_token;
+  } catch (err) {
+    processQueue(err, null);
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    window.location.href = "/login";
+    return Promise.reject(err);
+  } finally {
+    isRefreshing = false;
+  }
+};
 
 export default api;
