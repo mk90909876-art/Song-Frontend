@@ -61,6 +61,50 @@ const resolveSaavnUrl = async (song) => {
   return fetched?.url || null;
 };
 
+// ── Pre-resolve download URLs for queued songs ───────────────
+// Resolves in batches: first 5 immediately (covers ~20 min of music),
+// then batches of 3 to avoid API rate-limiting on large playlists.
+let _resolveAbort = 0;
+const preResolveQueueUrls = async (storeGet) => {
+  const resolveId = ++_resolveAbort;
+  const queue = storeGet().queue;
+  const unresolved = queue
+    .map((s, i) => ({ song: s, index: i }))
+    .filter(({ song }) => !song.downloadUrl?.length);
+
+  if (!unresolved.length) return;
+
+  const resolveSong = async (song) => {
+    try {
+      const r = await fetch(`${SAAVN}/api/songs/${song.id}`);
+      const d = await r.json();
+      const sd = d?.data?.[0];
+      if (sd?.downloadUrl) song.downloadUrl = sd.downloadUrl;
+    } catch {}
+  };
+
+  // Batch 1: first 5 unresolved songs in parallel (next ~20 min of music)
+  const batch1 = unresolved.slice(0, 5);
+  await Promise.all(batch1.map(({ song }) => resolveSong(song)));
+  if (resolveId !== _resolveAbort) return; // abort if new playSong fired
+  // Update state with resolved URLs
+  const q1 = [...storeGet().queue];
+  usePlayerStore.setState({ queue: q1 });
+  saveSession({ currentSong: storeGet().currentSong, queue: q1, progress: storeGet().progress, history: storeGet().history, stationId: storeGet().stationId });
+
+  // Batch 2+: remaining songs in groups of 3
+  const remaining = unresolved.slice(5);
+  for (let i = 0; i < remaining.length; i += 3) {
+    if (resolveId !== _resolveAbort) return;
+    const batch = remaining.slice(i, i + 3);
+    await Promise.all(batch.map(({ song }) => resolveSong(song)));
+    if (resolveId !== _resolveAbort) return;
+    const q = [...storeGet().queue];
+    usePlayerStore.setState({ queue: q });
+    saveSession({ currentSong: storeGet().currentSong, queue: q, progress: storeGet().progress, history: storeGet().history, stationId: storeGet().stationId });
+  }
+};
+
 // ── Single Audio Element ──────────────────────────────────────
 let _currentLoadId = 0;
 let _isTransitioning = false; // Flag to prevent Android killing notification between songs
@@ -317,6 +361,12 @@ export const usePlayerStore = create((set, get) => ({
       set({ saavnUnavailable: true, isPlaying: false });
     });
 
+    // Pre-resolve download URLs for queued songs (critical for iOS background)
+    // Runs immediately so URLs are ready before user locks screen
+    if (newQueue.some(s => !s.downloadUrl?.length)) {
+      preResolveQueueUrls(get);
+    }
+
     // Auto queue refill via Saavn suggestions
     if (autoQueue && newQueue.filter(s => s.id !== song.id).length < QUEUE_REFILL_AT) {
       setTimeout(() => get().fetchSuggestions(song), 3000);
@@ -431,11 +481,15 @@ export const usePlayerStore = create((set, get) => ({
     const q = [...get().queue, song];
     set({ queue: q });
     saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress, history: get().history, stationId: get().stationId });
+    // Pre-resolve if library song without downloadUrl
+    if (!song.downloadUrl?.length) preResolveQueueUrls(get);
   },
   playNext: (song) => {
     const q = [song, ...get().queue];
     set({ queue: q });
     saveSession({ currentSong: get().currentSong, queue: q, progress: get().progress, history: get().history, stationId: get().stationId });
+    // Pre-resolve if library song without downloadUrl
+    if (!song.downloadUrl?.length) preResolveQueueUrls(get);
   },
   removeFromQueue: (index) => {
     const q = get().queue.filter((_, i) => i !== index);
