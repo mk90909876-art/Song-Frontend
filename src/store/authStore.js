@@ -59,22 +59,37 @@ export const useAuthStore = create((set, get) => ({
   },
 
   fetchMe: async () => {
+    console.log("fetchMe: start");
     const token = localStorage.getItem("access_token");
+    console.log("fetchMe: token exists:", !!token);
+
     if (!token) {
+      console.log("fetchMe: no token, setting loading false");
       set({ user: null, token: null, loading: false });
       return;
     }
 
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), 8000)
+    );
+
     try {
-      const { data } = await api.get("/api/auth/me");
+      console.log("fetchMe: calling /api/auth/me");
+      const { data } = await Promise.race([
+        api.get("/api/auth/me"),
+        timeout
+      ]);
+      console.log("fetchMe: success, user:", data);
       set({ user: data, token, loading: false });
       refreshManager.scheduleRefresh();
       useLibraryStore.getState().loadLibrary();
     } catch (err) {
+      console.log("fetchMe: error status:", err.response?.status, "message:", err.message);
       if (err.response?.status === 401) {
+        console.log("fetchMe: 401, clearing user");
         set({ user: null, token: null, loading: false });
       } else {
-        console.warn("fetchMe network error, using cached token:", err.message);
+        console.log("fetchMe: network error, using cached token");
         const user = decodeToken(token);
         set({ user, token, loading: false });
         refreshManager.scheduleRefresh();
