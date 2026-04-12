@@ -15,7 +15,7 @@ const saveSession = (state) => {
     localStorage.setItem("session_progress", String(state.progress));
     localStorage.setItem("session_history", JSON.stringify(state.history));
     localStorage.setItem("session_station", state.stationId || "");
-  } catch {}
+  } catch { }
 };
 const loadSession = () => {
   try {
@@ -32,7 +32,7 @@ const loadSearchHistory = () => {
   try { return JSON.parse(localStorage.getItem("search_history") || "[]"); } catch { return []; }
 };
 const saveSearchHistory = (h) => {
-  try { localStorage.setItem("search_history", JSON.stringify(h)); } catch {}
+  try { localStorage.setItem("search_history", JSON.stringify(h)); } catch { }
 };
 
 const session = loadSession();
@@ -80,7 +80,7 @@ const preResolveQueueUrls = async (storeGet) => {
       const d = await r.json();
       const sd = d?.data?.[0];
       if (sd?.downloadUrl) song.downloadUrl = sd.downloadUrl;
-    } catch {}
+    } catch { }
   };
 
   // Batch 1: first 5 unresolved songs in parallel (next ~20 min of music)
@@ -130,7 +130,7 @@ const getAudio = () => {
               position: el.currentTime,
             });
           }
-        } catch {}
+        } catch { }
       }
     });
 
@@ -186,7 +186,7 @@ const getAudio = () => {
     // ── Singleton Media Session Handlers ──
     if ("mediaSession" in navigator) {
       navigator.mediaSession.setActionHandler("play", () => {
-        el.play().catch(() => {});
+        el.play().catch(() => { });
       });
       navigator.mediaSession.setActionHandler("pause", () => {
         el.pause();
@@ -204,8 +204,8 @@ const getAudio = () => {
         navigator.mediaSession.setActionHandler("seekforward", (a) => {
           el.currentTime = Math.min(el.duration || 0, el.currentTime + (a.seekOffset || 10));
         });
-      } catch {}
-      try { navigator.mediaSession.setActionHandler("stop", () => { el.pause(); el.currentTime = 0; }); } catch {}
+      } catch { }
+      try { navigator.mediaSession.setActionHandler("stop", () => { el.pause(); el.currentTime = 0; }); } catch { }
     }
 
     window._audioEl = el;
@@ -220,7 +220,7 @@ const setMediaSession = (song) => {
     const el = getAudio();
     const artwork = [{ src: song.thumbnail, sizes: "500x500", type: "image/jpeg" }];
     if (song.thumbnail.includes("googleusercontent") || song.thumbnail.includes("ytimg")) {
-       artwork.push({ src: song.thumbnail.replace("hqdefault", "maxresdefault"), sizes: "1280x720", type: "image/jpeg" });
+      artwork.push({ src: song.thumbnail.replace("hqdefault", "maxresdefault"), sizes: "1280x720", type: "image/jpeg" });
     }
 
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -262,7 +262,7 @@ export const usePlayerStore = create((set, get) => ({
   setProgress: (p) => {
     set({ progress: p });
     if (Math.floor(p) % 5 === 0) {
-      try { localStorage.setItem("session_progress", String(p)); } catch {}
+      try { localStorage.setItem("session_progress", String(p)); } catch { }
     }
   },
   setIsPlaying: (v) => set({ isPlaying: v }),
@@ -302,16 +302,16 @@ export const usePlayerStore = create((set, get) => ({
       newQueue = updatedQueue !== null ? updatedQueue : (fromQueue ? queue : []);
     }
 
-    set({ 
-      currentSong: song, 
-      isPlaying: false, 
-      progress: initialProgress, 
-      duration: 0, 
-      history: newHistory, 
-      savedProgress: initialProgress, 
-      queue: newQueue, 
-      saavnUnavailable: false, 
-      stationId: (fromQueue || fromHistory) ? get().stationId : null 
+    set({
+      currentSong: song,
+      isPlaying: false,
+      progress: initialProgress,
+      duration: 0,
+      history: newHistory,
+      savedProgress: initialProgress,
+      queue: newQueue,
+      saavnUnavailable: false,
+      stationId: (fromQueue || fromHistory) ? get().stationId : null
     });
     saveSession({ currentSong: song, queue: newQueue, progress: initialProgress, history: newHistory, stationId: (fromQueue || fromHistory) ? get().stationId : null });
 
@@ -378,7 +378,7 @@ export const usePlayerStore = create((set, get) => ({
       const { queue, currentSong, history, stationId } = get();
       if (queue.length >= QUEUE_MAX) return;
 
-      const url = stationId 
+      const url = stationId
         ? `${SAAVN}/api/songs/${song.id}/suggestions?limit=20&stationId=${encodeURIComponent(stationId)}`
         : `${SAAVN}/api/songs/${song.id}/suggestions?limit=20`;
 
@@ -388,7 +388,7 @@ export const usePlayerStore = create((set, get) => ({
 
       const newStationId = data.stationId || stationId;
       const ids = new Set([...queue.map(s => s.id), currentSong?.id, ...history.slice(0, 10).map(s => s.id)]);
-      
+
       const freshRaw = data.data
         .map(saavnToSong)
         .filter(s => !ids.has(s.id))
@@ -403,7 +403,7 @@ export const usePlayerStore = create((set, get) => ({
               const d = await r.json();
               const sd = d?.data?.[0];
               if (sd?.downloadUrl) s.downloadUrl = sd.downloadUrl;
-            } catch {}
+            } catch { }
           }
           return s;
         })
@@ -453,16 +453,16 @@ export const usePlayerStore = create((set, get) => ({
     const el = getAudio();
     // Let the audio element's play/pause events handle isPlaying state
     // This prevents race conditions with MediaSession
-    if (el.paused) { 
+    if (el.paused) {
       // Handle first interaction after app reload (no src yet)
       if (!el.src && get().currentSong) {
-        get().playSong(get().currentSong, { 
-          fromQueue: true, 
+        get().playSong(get().currentSong, {
+          fromQueue: true,
           updatedQueue: get().queue,
-          initialProgress: get().progress 
+          initialProgress: get().progress
         });
       } else {
-        el.play().catch(() => {}); 
+        el.play().catch(() => { });
       }
     }
     else { el.pause(); }
