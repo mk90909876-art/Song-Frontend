@@ -50,6 +50,7 @@ export const useAuthStore = create((set, get) => ({
   },
 
   logout: async () => {
+    refreshManager.destroy(); // cancel proactive timer immediately
     try { await api.post("/api/auth/logout"); } catch { }
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
@@ -75,15 +76,21 @@ export const useAuthStore = create((set, get) => ({
         api.get("/api/auth/me"),
         timeout
       ]);
-      set({ user: data, token, loading: false });
+      // Re-read token from localStorage — a proactive refresh may have fired
+      // during the await and stored a newer token. Using the snapshot from above
+      // would overwrite it with the old, possibly-expired token.
+      const currentToken = localStorage.getItem("access_token") || token;
+      set({ user: data, token: currentToken, loading: false });
       refreshManager.scheduleRefresh();
       useLibraryStore.getState().loadLibrary();
     } catch (err) {
       if (err.response?.status === 401) {
         set({ user: null, token: null, loading: false });
       } else {
-        const user = decodeToken(token);
-        set({ user, token, loading: false });
+        // Network error / timeout — fall back to cached JWT to stay logged in
+        const currentToken = localStorage.getItem("access_token") || token;
+        const user = decodeToken(currentToken);
+        set({ user, token: currentToken, loading: false });
         refreshManager.scheduleRefresh();
         useLibraryStore.getState().loadLibrary();
       }
