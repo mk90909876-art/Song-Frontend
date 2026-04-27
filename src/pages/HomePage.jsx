@@ -3,6 +3,8 @@ import { useAuthStore } from "../store/authStore";
 import { usePlayerStore } from "../store/playerStore";
 import { useLibraryStore } from "../store/libraryStore";
 import SongCard from "../components/SongCard";
+import api from "../utils/api";
+import { saavnToSong } from "../utils/saavn";
 
 export default function HomePage() {
   const { user } = useAuthStore();
@@ -22,9 +24,7 @@ export default function HomePage() {
       
       setLoadingRec(true);
       try {
-        const { SAAVN, saavnToSong } = await import("../utils/saavn");
-        const res = await fetch(`${SAAVN}/api/songs/${seed.id}/suggestions?limit=15`);
-        const data = await res.json();
+        const { data } = await api.get(`/api/saavn/songs/${seed.id}/suggestions?limit=15`);
         if (data.success && data.data) {
           setRecommended(data.data.map(saavnToSong).slice(0, 10));
         }

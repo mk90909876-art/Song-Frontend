@@ -1,5 +1,3 @@
-const SAAVN = import.meta.env.VITE_SAAVN_URL;
-
 // Map a Saavn Worker SongModel to our internal song object
 export const saavnToSong = (s) => ({
   id: s.id,
@@ -13,5 +11,3 @@ export const saavnToSong = (s) => ({
   downloadUrl: s.downloadUrl || [],
   source: "saavn",
 });
-
-export { SAAVN };

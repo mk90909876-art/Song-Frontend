@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { saavnToSong, SAAVN } from "../utils/saavn";
+import { saavnToSong } from "../utils/saavn";
+import api from "../utils/api";
 import { resumeAudioSession, nudgeVolume, startNudgeHeartbeat, stopNudgeHeartbeat } from "../utils/audioSession";
 
 const MAX_HISTORY = 50;
@@ -48,9 +49,8 @@ const resolveSaavnUrl = async (song) => {
 
   if (direct?.url) return direct.url;
 
-  // Fetch full song details from Saavn worker by ID
-  const res = await fetch(`${SAAVN}/api/songs/${song.id}`);
-  const data = await res.json();
+  // Fetch full song details from Saavn proxy by ID
+  const { data } = await api.get(`/api/saavn/songs/${song.id}`);
   const songData = data?.data?.[0];
   if (!songData?.downloadUrl?.length) return null;
 
@@ -76,9 +76,8 @@ const preResolveQueueUrls = async (storeGet) => {
 
   const resolveSong = async (song) => {
     try {
-      const r = await fetch(`${SAAVN}/api/songs/${song.id}`);
-      const d = await r.json();
-      const sd = d?.data?.[0];
+      const { data } = await api.get(`/api/saavn/songs/${song.id}`);
+      const sd = data?.data?.[0];
       if (sd?.downloadUrl) song.downloadUrl = sd.downloadUrl;
     } catch { }
   };
@@ -378,12 +377,11 @@ export const usePlayerStore = create((set, get) => ({
       const { queue, currentSong, history, stationId } = get();
       if (queue.length >= QUEUE_MAX) return;
 
-      const url = stationId
-        ? `${SAAVN}/api/songs/${song.id}/suggestions?limit=20&stationId=${encodeURIComponent(stationId)}`
-        : `${SAAVN}/api/songs/${song.id}/suggestions?limit=20`;
+      const params = stationId
+        ? `?limit=20&stationId=${encodeURIComponent(stationId)}`
+        : `?limit=20`;
 
-      const res = await fetch(url);
-      const data = await res.json();
+      const { data } = await api.get(`/api/saavn/songs/${song.id}/suggestions${params}`);
       if (!data.success || !data.data?.length) return;
 
       const newStationId = data.stationId || stationId;
@@ -399,8 +397,7 @@ export const usePlayerStore = create((set, get) => ({
         freshRaw.map(async (s) => {
           if (!s.downloadUrl?.length) {
             try {
-              const r = await fetch(`${SAAVN}/api/songs/${s.id}`);
-              const d = await r.json();
+              const { data: d } = await api.get(`/api/saavn/songs/${s.id}`);
               const sd = d?.data?.[0];
               if (sd?.downloadUrl) s.downloadUrl = sd.downloadUrl;
             } catch { }

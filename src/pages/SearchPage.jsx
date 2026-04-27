@@ -2,7 +2,8 @@ import { useState, useRef } from "react";
 import SongCard from "../components/SongCard";
 import { usePlayerStore } from "../store/playerStore";
 import { useLibraryStore } from "../store/libraryStore";
-import { saavnToSong, SAAVN } from "../utils/saavn";
+import { saavnToSong } from "../utils/saavn";
+import api from "../utils/api";
 
 const TABS = ["Songs", "Artists", "Playlists"];
 const truncate = (str, n = 40) => str?.length > n ? str.slice(0, n).trimEnd() + "…" : str;
@@ -25,8 +26,7 @@ const PlaylistCard = ({ playlist }) => {
     setExpanded(true);
     setLoadingSongs(true);
     try {
-      const res = await fetch(`${SAAVN}/api/playlists/${playlist.id}`);
-      const data = await res.json();
+      const { data } = await api.get(`/api/saavn/playlists/${playlist.id}`);
       setSongs((data?.data?.songs || []).map(saavnToSong));
     } catch { setSongs([]); }
     finally { setLoadingSongs(false); }
@@ -37,8 +37,7 @@ const PlaylistCard = ({ playlist }) => {
     let songList = songs;
     if (!songList.length) {
       try {
-        const res = await fetch(`${SAAVN}/api/playlists/${playlist.id}`);
-        const data = await res.json();
+        const { data } = await api.get(`/api/saavn/playlists/${playlist.id}`);
         songList = (data?.data?.songs || []).map(saavnToSong);
         setSongs(songList);
       } catch { return; }
@@ -55,8 +54,7 @@ const PlaylistCard = ({ playlist }) => {
     try {
       let songList = songs;
       if (!songList.length) {
-        const res = await fetch(`${SAAVN}/api/playlists/${playlist.id}`);
-        const data = await res.json();
+        const { data } = await api.get(`/api/saavn/playlists/${playlist.id}`);
         songList = (data?.data?.songs || []).map(saavnToSong);
         setSongs(songList);
       }
@@ -151,17 +149,14 @@ export default function SearchPage() {
     if (saveHistory) addSearchHistory(q.trim());
     try {
       if (tab === "Songs") {
-        const res = await fetch(`${SAAVN}/api/search/songs?query=${encodeURIComponent(q)}&limit=20`);
-        const data = await res.json();
+        const { data } = await api.get(`/api/saavn/search/songs?query=${encodeURIComponent(q)}&limit=20`);
         const songs = (data?.data?.results || []).map(saavnToSong);
         setResults(r => ({ ...r, songs }));
       } else if (tab === "Artists") {
-        const res = await fetch(`${SAAVN}/api/search/artists?query=${encodeURIComponent(q)}&limit=20`);
-        const data = await res.json();
+        const { data } = await api.get(`/api/saavn/search/artists?query=${encodeURIComponent(q)}&limit=20`);
         setResults(r => ({ ...r, artists: data?.data?.results || [] }));
       } else if (tab === "Playlists") {
-        const res = await fetch(`${SAAVN}/api/search/playlists?query=${encodeURIComponent(q)}&limit=10`);
-        const data = await res.json();
+        const { data } = await api.get(`/api/saavn/search/playlists?query=${encodeURIComponent(q)}&limit=10`);
         const playlists = (data?.data?.results || []).map(p => ({
           id: p.id,
           title: p.name,
@@ -182,8 +177,7 @@ export default function SearchPage() {
   const loadArtistSongs = async (artist) => {
     setLoading(true);
     try {
-      const res = await fetch(`${SAAVN}/api/artists/${artist.id}/songs?limit=20`);
-      const data = await res.json();
+      const { data } = await api.get(`/api/saavn/artists/${artist.id}/songs?limit=20`);
       const songs = (data?.data?.results || []).map(saavnToSong);
       setArtistSongs({ artist, songs });
     } catch { setArtistSongs({ artist, songs: [] }); }

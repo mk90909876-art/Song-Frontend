@@ -3,6 +3,7 @@ import { useAuthStore } from "../store/authStore";
 import { usePlayerStore } from "../store/playerStore";
 import { useLibraryStore } from "../store/libraryStore";
 import api from "../utils/api";
+import { saavnToSong } from "../utils/saavn";
 
 const THEMES = [
   { id: "dark", label: "Dark", icon: "🌙" },
@@ -65,7 +66,6 @@ function SpotifyImport() {
 
       // Step 2: Match each track to JioSaavn on the frontend
       setLoadingMsg(`Matching ${data.totalTracks} tracks on JioSaavn…`);
-      const { SAAVN, saavnToSong } = await import("../utils/saavn");
       const matched = [];
       let failed = 0;
 
@@ -77,8 +77,7 @@ function SpotifyImport() {
         const results = await Promise.allSettled(
           batch.map(async (track) => {
             const q = encodeURIComponent(`${track.title} ${track.artist}`.trim());
-            const res = await fetch(`${SAAVN}/api/search/songs?query=${q}&limit=3`);
-            const d = await res.json();
+            const { data: d } = await api.get(`/api/saavn/search/songs?query=${q}&limit=3`);
             const first = d?.data?.results?.[0];
             if (!first) throw new Error("no result");
             return saavnToSong(first);
