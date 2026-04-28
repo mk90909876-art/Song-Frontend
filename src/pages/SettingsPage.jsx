@@ -62,7 +62,7 @@ function SpotifyImport() {
     setSaved(false);
     try {
       // Step 1: Get Spotify track list from backend
-      const { data } = await api.post("/api/music/import-spotify", { url: url.trim() });
+      const { data } = await api.post("/api/saavn/import-spotify", { url: url.trim() });
 
       // Step 2: Match each track to JioSaavn on the frontend
       setLoadingMsg(`Matching ${data.totalTracks} tracks on JioSaavn…`);
