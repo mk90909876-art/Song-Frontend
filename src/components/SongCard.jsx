@@ -51,7 +51,8 @@ export function BottomSheet({ song, onClose }) {
         maxHeight: "70vh",
         display: "flex", flexDirection: "column",
         animation: "slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1)",
-        padding: "20px"
+        padding: "20px",
+        background: "var(--bg-surface)",
       }}>
         <div style={{ display: "flex", justifyContent: "center", paddingBottom: "16px" }}>
           <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.2)", borderRadius: "2px" }} />

@@ -127,6 +127,7 @@ export default function Player() {
         padding: "8px 12px",
         border: "1px solid var(--border-thin)",
         transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+        background: "var(--bg-surface)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <div onClick={() => setShowFullScreen(true)} style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0, cursor: "pointer" }}>
@@ -237,7 +238,7 @@ export default function Player() {
       {/* ── Portrait Queue Sheet ── */}
       {!isWide && showQueue && (
         <div style={{ position: "fixed", inset: 0, zIndex: 10000, background: "rgba(0,0,0,0.8)", display: "flex", flexDirection: "column", justifyContent: "flex-end" }} onClick={() => setShowQueue(false)}>
-          <div onClick={e => e.stopPropagation()} className="glass" style={{ height: "80vh", borderRadius: "32px 32px 0 0", display: "flex", flexDirection: "column", padding: "24px" }}>
+          <div onClick={e => e.stopPropagation()} className="glass" style={{ height: "80vh", borderRadius: "32px 32px 0 0", display: "flex", flexDirection: "column", padding: "24px", background: "var(--bg-surface)" }}>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: "24px" }}>
               <div style={{ width: "40px", height: "4px", background: "rgba(255,255,255,0.2)", borderRadius: "2px" }} />
             </div>

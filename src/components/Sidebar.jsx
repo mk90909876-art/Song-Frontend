@@ -31,6 +31,7 @@ export default function Sidebar() {
         display: "flex", justifyContent: "space-around", alignItems: "center",
         padding: "12px 0 24px", zIndex: 100,
         borderRadius: "20px 20px 0 0",
+        background: "var(--bg-surface)",
       }}>
         {NAV.map(({ to, icon, label }) => (
           <NavLink key={to} to={to} end={to === "/"}>
