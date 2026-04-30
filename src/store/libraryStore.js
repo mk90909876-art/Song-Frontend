@@ -100,6 +100,15 @@ export const useLibraryStore = create((set, get) => ({
     }
   },
 
+  toggleLike: async (song) => {
+    const isLiked = get().likedSongs.some(s => s.id === song.id);
+    if (isLiked) {
+      await get().unlikeSong(song.id);
+    } else {
+      await get().likeSong(song);
+    }
+  },
+
   // ── Playlists ──────────────────────────────────────────────
   createPlaylist: async (name, description = "") => {
     const { data } = await api.post("/api/library/playlists", { name, description });

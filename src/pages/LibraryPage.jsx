@@ -41,7 +41,9 @@ export default function LibraryPage() {
           <div className="glass" style={{ width: "180px", height: "180px", borderRadius: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "64px", border: "1px solid var(--border-thin)", boxShadow: "0 20px 40px rgba(0,0,0,0.4)" }}>♫</div>
           <div style={{ paddingBottom: "12px" }}>
             <h1 className="font-syne" style={{ fontSize: "48px", fontWeight: 800, letterSpacing: "-0.03em" }}>{selectedPlaylist.name}</h1>
-            <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginTop: "8px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>COLLECTION · {songs.length} TRACKS</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginTop: "8px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+              COLLECTION · {songs.length || selectedPlaylist.playlist_songs?.[0]?.count || 0} TRACKS
+            </p>
             
             <div style={{ display: "flex", gap: "12px", marginTop: "24px" }}>
               {songs.length > 0 && (
@@ -108,7 +110,9 @@ export default function LibraryPage() {
             </div>
             
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 700 }}>{playlistSongs[playlist.id]?.length || 0} TRACKS</span>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 700 }}>
+                {(playlistSongs[playlist.id]?.length ?? playlist.playlist_songs?.[0]?.count ?? 0)} TRACKS
+              </span>
               <button onClick={async (e) => {
                 e.stopPropagation();
                 await loadPlaylistSongs(playlist.id);
