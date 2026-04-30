@@ -11,6 +11,7 @@ export const applyTheme = (theme = getStoredTheme()) => {
   const isDark = theme === "void" || (theme === "system" && prefersDark);
   const root = document.documentElement;
   
+  if (isDark) {
     root.style.setProperty("--bg-void", "#000000");
     root.style.setProperty("--bg-surface", "rgba(5, 5, 5, 0.85)");
     root.style.setProperty("--bg-glass", "rgba(255, 255, 255, 0.03)");
@@ -18,6 +19,7 @@ export const applyTheme = (theme = getStoredTheme()) => {
     root.style.setProperty("--text-primary", "#ffffff");
     root.style.setProperty("--text-secondary", "rgba(255, 255, 255, 0.7)");
     root.style.setProperty("--text-muted", "rgba(255, 255, 255, 0.4)");
+  } else {
     root.style.setProperty("--bg-void", "#ffffff");
     root.style.setProperty("--bg-surface", "rgba(250, 250, 250, 0.9)");
     root.style.setProperty("--bg-glass", "rgba(0, 0, 0, 0.03)");

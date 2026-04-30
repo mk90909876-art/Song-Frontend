@@ -4,6 +4,7 @@
 :root {
   /* Default Tokens (Void) */
   --bg-void: #000000;
+  --bg-surface: rgba(10, 10, 10, 0.85);
   --bg-glass: rgba(255, 255, 255, 0.03);
   --text-primary: #ffffff;
   --text-secondary: rgba(255, 255, 255, 0.7);
