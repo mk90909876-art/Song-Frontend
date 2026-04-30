@@ -5,43 +5,12 @@ import { useLibraryStore } from "../store/libraryStore";
 import api from "../utils/api";
 import { saavnToSong } from "../utils/saavn";
 
-const THEMES = [
-  { id: "dark", label: "Dark", icon: "🌙" },
-  { id: "light", label: "Light", icon: "☀️" },
-  { id: "device", label: "Device", icon: "💻" },
-];
+import { THEMES, getStoredTheme, applyTheme } from "../utils/theme";
 
-const getStoredTheme = () => localStorage.getItem("theme") || "dark";
-
-export const applyTheme = (theme) => {
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const isDark = theme === "dark" || (theme === "device" && prefersDark);
-  const root = document.documentElement;
-  if (isDark) {
-    root.style.setProperty("--bg-primary", "#0a0a0a");
-    root.style.setProperty("--bg-secondary", "#111111");
-    root.style.setProperty("--bg-elevated", "#1a1a1a");
-    root.style.setProperty("--bg-card", "#1e1e1e");
-    root.style.setProperty("--text-primary", "#ffffff");
-    root.style.setProperty("--text-secondary", "#a0a0a0");
-    root.style.setProperty("--text-muted", "#555555");
-    root.style.setProperty("--border", "#2a2a2a");
-  } else {
-    root.style.setProperty("--bg-primary", "#f5f5f5");
-    root.style.setProperty("--bg-secondary", "#ffffff");
-    root.style.setProperty("--bg-elevated", "#ebebeb");
-    root.style.setProperty("--bg-card", "#e0e0e0");
-    root.style.setProperty("--text-primary", "#111111");
-    root.style.setProperty("--text-secondary", "#555555");
-    root.style.setProperty("--text-muted", "#999999");
-    root.style.setProperty("--border", "#d0d0d0");
-  }
-};
-
-// ── Spotify Import Section ────────────────────────────────────
+// -- Spotify Import Section --
 function SpotifyImport() {
   const [url, setUrl] = useState("");
-  const [status, setStatus] = useState("idle"); // idle | loading | done | error
+  const [status, setStatus] = useState("idle");
   const [loadingMsg, setLoadingMsg] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -51,55 +20,31 @@ function SpotifyImport() {
 
   const handleImport = async () => {
     if (!url.trim()) return;
-    if (!url.includes("spotify.com/playlist/")) {
-      setError("Please enter a valid Spotify playlist URL");
-      return;
-    }
     setStatus("loading");
-    setLoadingMsg("Fetching playlist from Spotify…");
+    setLoadingMsg("ESTABLISHING CONNECTION...");
     setError("");
-    setResult(null);
-    setSaved(false);
     try {
-      // Step 1: Get Spotify track list from backend
       const { data } = await api.post("/api/saavn/import-spotify", { url: url.trim() });
-
-      // Step 2: Match each track to JioSaavn on the frontend
-      setLoadingMsg(`Matching ${data.totalTracks} tracks on JioSaavn…`);
+      setLoadingMsg(`SYNCING ${data.totalTracks} TRACKS...`);
       const matched = [];
-      let failed = 0;
-
-      // Process in small batches to avoid hammering the API
       const tracks = data.matched || [];
-      const BATCH = 5;
-      for (let i = 0; i < tracks.length; i += BATCH) {
-        const batch = tracks.slice(i, i + BATCH);
+      for (let i = 0; i < tracks.length; i += 5) {
+        const batch = tracks.slice(i, i + 5);
         const results = await Promise.allSettled(
           batch.map(async (track) => {
             const q = encodeURIComponent(`${track.title} ${track.artist}`.trim());
             const { data: d } = await api.get(`/api/saavn/search/songs?query=${q}&limit=3`);
-            const first = d?.data?.results?.[0];
-            if (!first) throw new Error("no result");
-            return saavnToSong(first);
+            if (d?.data?.results?.[0]) return saavnToSong(d.data.results[0]);
+            throw new Error();
           })
         );
-        results.forEach(r => {
-          if (r.status === "fulfilled") matched.push(r.value);
-          else failed++;
-        });
-        setLoadingMsg(`Matched ${matched.length} / ${tracks.length} tracks on JioSaavn…`);
+        results.forEach(r => r.status === "fulfilled" && matched.push(r.value));
+        setLoadingMsg(`INDEXING: ${matched.length} / ${tracks.length}`);
       }
-
-      setResult({
-        playlistName: data.playlistName,
-        matched,
-        matchedCount: matched.length,
-        failedCount: data.totalTracks - matched.length,
-        totalTracks: data.totalTracks,
-      });
+      setResult({ playlistName: data.playlistName, matched, totalTracks: data.totalTracks });
       setStatus("done");
     } catch (err) {
-      setError(err.response?.data?.error || "Import failed. Make sure the playlist is public.");
+      setError("Import failed. Ensure the playlist is public.");
       setStatus("error");
     }
   };
@@ -111,107 +56,38 @@ function SpotifyImport() {
       const playlist = await createPlaylist(result.playlistName, "Imported from Spotify");
       await Promise.all(result.matched.map(s => addSongToPlaylist(playlist.id, s)));
       setSaved(true);
-    } catch (err) {
-      setError("Failed to save to library");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const reset = () => {
-    setUrl(""); setStatus("idle"); setResult(null); setError(""); setSaved(false);
+    } catch (err) { setError("Save failed"); }
+    finally { setSaving(false); }
   };
 
   return (
     <div>
-      <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "14px", lineHeight: "1.5" }}>
-        Paste a public Spotify playlist URL to import it into your library.
-      </p>
-
+      <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "16px", letterSpacing: "0.02em" }}>SYNC EXTERNAL PLAYLISTS INTO THE VOID</p>
       {status === "idle" || status === "error" ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <input
-            value={url}
-            onChange={e => setUrl(e.target.value)}
-            placeholder="https://open.spotify.com/playlist/..."
-            style={{
-              width: "100%", padding: "10px 14px", background: "var(--bg-primary)",
-              border: "1px solid var(--border)", borderRadius: "8px",
-              color: "var(--text-primary)", fontSize: "13px", outline: "none",
-              boxSizing: "border-box", fontFamily: "DM Sans",
-            }}
-          />
-          {error && <div style={{ fontSize: "12px", color: "#ff6b6b" }}>{error}</div>}
-          <button onClick={handleImport} disabled={!url.trim()} style={{
-            padding: "10px", background: "#1DB954", border: "none",
-            borderRadius: "8px", color: "#fff", fontSize: "13px", fontWeight: 700,
-            cursor: url.trim() ? "pointer" : "not-allowed", opacity: url.trim() ? 1 : 0.5,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-          }}>
-            <span>♫</span> Import from Spotify
-          </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <input value={url} onChange={e => setUrl(e.target.value)} placeholder="SPOTIFY URL"
+            style={{ width: "100%", padding: "14px", background: "var(--bg-glass)", border: "1px solid var(--border-thin)", borderRadius: "12px", color: "white", fontSize: "12px", outline: "none", fontFamily: "Outfit" }} />
+          {error && <div style={{ fontSize: "11px", color: "#ff4444", fontWeight: 700 }}>{error}</div>}
+          <button onClick={handleImport} style={{ padding: "14px", background: "white", color: "black", border: "none", borderRadius: "12px", fontSize: "12px", fontWeight: 800, cursor: "pointer", textTransform: "uppercase" }}>BEGIN IMPORT</button>
         </div>
       ) : status === "loading" ? (
-        <div style={{ textAlign: "center", padding: "20px 0" }}>
-          <div style={{ fontSize: "24px", marginBottom: "10px", animation: "spin 1s linear infinite", display: "inline-block" }}>↻</div>
-          <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>{loadingMsg || "Importing…"}</div>
-          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>This may take a moment</div>
+        <div style={{ textAlign: "center", padding: "32px 0" }}>
+          <div style={{ fontSize: "12px", fontWeight: 800, color: "var(--text-muted)", letterSpacing: "0.2em" }}>{loadingMsg}</div>
         </div>
       ) : status === "done" && result ? (
-        <div>
-          {/* Result summary */}
-          <div style={{ background: "var(--bg-primary)", borderRadius: "10px", padding: "14px", marginBottom: "12px" }}>
-            <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "8px", color: "var(--text-primary)" }}>
-              "{result.playlistName}"
-            </div>
-            <div style={{ display: "flex", gap: "16px", fontSize: "13px" }}>
-              <span style={{ color: "#1DB954" }}>✓ {result.matchedCount} matched</span>
-              {result.failedCount > 0 && <span style={{ color: "var(--text-muted)" }}>✗ {result.failedCount} not found</span>}
-              <span style={{ color: "var(--text-secondary)" }}>of {result.totalTracks} songs</span>
-            </div>
-          </div>
-
-          {/* Preview songs */}
-          <div style={{ maxHeight: "200px", overflowY: "auto", marginBottom: "12px", borderRadius: "8px", border: "1px solid var(--border)" }}>
-            {result.matched.slice(0, 20).map((song, i) => (
-              <div key={song.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", borderBottom: i < Math.min(result.matched.length, 20) - 1 ? "1px solid var(--border)" : "none" }}>
-                <img src={song.thumbnail} alt="" style={{ width: "32px", height: "32px", borderRadius: "4px", objectFit: "cover", flexShrink: 0 }} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{song.title}</div>
-                  <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>{song.artist}</div>
-                </div>
-              </div>
-            ))}
-            {result.matched.length > 20 && (
-              <div style={{ padding: "8px 10px", fontSize: "12px", color: "var(--text-muted)", textAlign: "center" }}>
-                +{result.matched.length - 20} more songs
-              </div>
-            )}
-          </div>
-
-          {/* Action buttons */}
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button onClick={saveToLibrary} disabled={saving || saved} style={{
-              flex: 1, padding: "10px", background: saved ? "var(--bg-elevated)" : "#1DB954",
-              border: "none", borderRadius: "8px", color: saved ? "var(--text-secondary)" : "#fff",
-              fontSize: "13px", fontWeight: 700, cursor: saving || saved ? "default" : "pointer",
-            }}>
-              {saving ? "Saving…" : saved ? "✓ Saved to Library" : "Save to Library"}
-            </button>
-            <button onClick={reset} style={{
-              padding: "10px 16px", background: "var(--bg-primary)", border: "1px solid var(--border)",
-              borderRadius: "8px", color: "var(--text-secondary)", fontSize: "13px", cursor: "pointer",
-            }}>
-              Import Another
-            </button>
-          </div>
+        <div className="glass" style={{ padding: "20px", borderRadius: "16px", border: "1px solid var(--border-thin)" }}>
+          <div style={{ fontSize: "14px", fontWeight: 800, marginBottom: "8px" }}>{result.playlistName}</div>
+          <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginBottom: "20px" }}>{result.matched.length} / {result.totalTracks} TRACKS MATCHED</div>
+          <button onClick={saveToLibrary} style={{ width: "100%", padding: "14px", background: saved ? "transparent" : "white", color: saved ? "white" : "black", border: saved ? "1px solid var(--border-thin)" : "none", borderRadius: "12px", fontWeight: 800, fontSize: "12px" }}>
+            {saving ? "SAVING..." : saved ? "ADDED TO LIBRARY" : "CONFIRM IMPORT"}
+          </button>
         </div>
       ) : null}
     </div>
   );
 }
 
-// ── Main Settings Page ────────────────────────────────────────
+// -- Settings Page --
 export default function SettingsPage() {
   const { user, logout } = useAuthStore();
   const { autoQueue, toggleAutoQueue } = usePlayerStore();
@@ -225,105 +101,62 @@ export default function SettingsPage() {
   };
 
   return (
-    <div style={{ padding: "32px", overflowY: "auto", height: "100%", maxWidth: "560px" }}>
-      <h1 style={{ fontFamily: "Syne", fontSize: "28px", fontWeight: 800, marginBottom: "32px" }}>Settings</h1>
+    <div style={{ padding: "32px 0", maxWidth: "600px", margin: "0 auto" }}>
+      <h1 className="font-syne" style={{ fontSize: "36px", fontWeight: 800, marginBottom: "24px", letterSpacing: "-0.03em" }}>Settings</h1>
 
-      {/* Profile */}
-      <Section title="Profile">
-        <div style={{ display: "flex", alignItems: "center", gap: "14px", padding: "4px 0" }}>
-          <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", fontWeight: 700 }}>
+      <Section title="IDENTITY">
+        <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+          <div style={{ width: "60px", height: "60px", borderRadius: "50%", background: "white", color: "black", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: 900 }}>
             {user?.username?.[0]?.toUpperCase() || "?"}
           </div>
           <div>
-            <div style={{ fontSize: "15px", fontWeight: 600 }}>{user?.username || "User"}</div>
-            <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "2px" }}>{user?.email || ""}</div>
+            <div style={{ fontSize: "18px", fontWeight: 800 }}>{user?.username || "GUEST"}</div>
+            <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{user?.email || "NOT SIGNED IN"}</div>
           </div>
         </div>
       </Section>
 
-      {/* Appearance */}
-      <Section title="Appearance">
-        <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "14px" }}>Choose how Song looks to you</p>
-        <div style={{ display: "flex", gap: "10px" }}>
+      <Section title="AESTHETIC">
+        <div style={{ display: "flex", gap: "12px" }}>
           {THEMES.map(t => (
-            <button key={t.id} onClick={() => setTheme(t.id)} style={{
-              flex: 1, padding: "14px 8px",
-              background: currentTheme === t.id ? "var(--accent)" : "var(--bg-elevated)",
-              border: `2px solid ${currentTheme === t.id ? "var(--accent)" : "var(--border)"}`,
-              borderRadius: "12px", cursor: "pointer",
-              display: "flex", flexDirection: "column", alignItems: "center", gap: "6px",
-              transition: "all 0.15s",
+            <button key={t.id} onClick={() => setTheme(t.id)} className="glass" style={{
+              flex: 1, padding: "20px 12px",
+              background: currentTheme === t.id ? "var(--text-primary)" : "transparent",
+              border: `1px solid ${currentTheme === t.id ? "var(--text-primary)" : "var(--border-thin)"}`,
+              borderRadius: "16px", cursor: "pointer",
+              display: "flex", flexDirection: "column", alignItems: "center", gap: "8px",
+              transition: "0.2s cubic-bezier(0.4, 0, 0.2, 1)",
             }}>
-              <span style={{ fontSize: "22px" }}>{t.icon}</span>
-              <span style={{ fontSize: "12px", fontWeight: 600, color: currentTheme === t.id ? "#fff" : "var(--text-primary)" }}>{t.label}</span>
+              <span style={{ fontSize: "18px", color: currentTheme === t.id ? "var(--bg-void)" : "var(--text-primary)", fontWeight: 900 }}>{t.icon}</span>
+              <span style={{ fontSize: "10px", fontWeight: 800, color: currentTheme === t.id ? "var(--bg-void)" : "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.1em" }}>{t.label}</span>
             </button>
           ))}
         </div>
       </Section>
 
-      {/* Playback */}
-      <Section title="Playback">
-        <SettingRow label="Auto Queue" desc="Automatically add related songs when queue is low">
-          <Toggle on={autoQueue} onToggle={toggleAutoQueue} />
-        </SettingRow>
-      </Section>
-
-      {/* Spotify Import */}
-      <Section title="Import from Spotify">
+      <Section title="EXTERNAL">
         <SpotifyImport />
       </Section>
 
-      {/* Account */}
-      <Section title="Account">
-        <SettingRow label="Log out" desc="Sign out of your account">
-          <button onClick={logout} style={{
-            padding: "8px 20px", background: "transparent",
-            border: "1px solid var(--accent)", borderRadius: "8px",
-            color: "var(--accent)", cursor: "pointer",
-            fontSize: "13px", fontWeight: 600,
-          }}>Log out</button>
+      <Section title="SYSTEM">
+        <SettingRow label="Session" desc="Terminate current authentication">
+          <button onClick={logout} style={{ padding: "10px 20px", background: "transparent", border: "1px solid #ff4444", borderRadius: "8px", color: "#ff4444", cursor: "pointer", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>LOGOUT</button>
         </SettingRow>
       </Section>
 
-      {/* About */}
-      <Section title="About">
-        <div style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: "1.6" }}>
-          <p>Song — a private music player for friends.</p>
-          <p style={{ marginTop: "6px", color: "var(--text-muted)" }}>Streams audio via JioSaavn · No ads · No tracking</p>
-        </div>
-      </Section>
-
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
-}
-
-function Toggle({ on, onToggle }) {
-  return (
-    <div onClick={onToggle} style={{
-      width: "44px", height: "24px",
-      background: on ? "var(--accent)" : "var(--bg-card)",
-      borderRadius: "12px", cursor: "pointer",
-      position: "relative", transition: "background 0.2s",
-      border: "1px solid var(--border)", flexShrink: 0,
-    }}>
-      <div style={{
-        position: "absolute", top: "3px",
-        left: on ? "22px" : "3px",
-        width: "16px", height: "16px",
-        background: "#fff", borderRadius: "50%",
-        transition: "left 0.2s",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
-      }} />
+      <div className="stitch-top" style={{ paddingTop: "32px", textAlign: "center" }}>
+        <div className="font-syne" style={{ fontSize: "24px", fontWeight: 900, opacity: 0.2, letterSpacing: "0.5em" }}>SONG</div>
+        <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "8px", letterSpacing: "0.1em" }}>VERSION 2.0.0</div>
+      </div>
     </div>
   );
 }
 
 function Section({ title, children }) {
   return (
-    <div style={{ marginBottom: "32px" }}>
-      <h2 style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.08em", marginBottom: "14px" }}>{title.toUpperCase()}</h2>
-      <div style={{ background: "var(--bg-elevated)", borderRadius: "12px", padding: "16px", border: "1px solid var(--border)" }}>
+    <div style={{ marginBottom: "clamp(24px, 5vw, 48px)" }}>
+      <h2 style={{ fontSize: "10px", fontWeight: 800, color: "var(--text-muted)", letterSpacing: "0.2em", marginBottom: "clamp(12px, 2vw, 16px)" }}>{title}</h2>
+      <div className="glass" style={{ borderRadius: "20px", padding: "clamp(16px, 4vw, 24px)", border: "1px solid var(--border-thin)" }}>
         {children}
       </div>
     </div>
@@ -332,12 +165,20 @@ function Section({ title, children }) {
 
 function SettingRow({ label, desc, children }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "24px" }}>
       <div>
-        <div style={{ fontSize: "14px", fontWeight: 500 }}>{label}</div>
-        {desc && <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>{desc}</div>}
+        <div style={{ fontSize: "14px", fontWeight: 800 }}>{label}</div>
+        {desc && <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>{desc}</div>}
       </div>
       {children}
+    </div>
+  );
+}
+
+function Toggle({ on, onToggle }) {
+  return (
+    <div onClick={onToggle} style={{ width: "48px", height: "26px", background: on ? "white" : "rgba(255,255,255,0.05)", borderRadius: "13px", cursor: "pointer", position: "relative", transition: "0.3s", border: "1px solid var(--border-thin)" }}>
+      <div style={{ position: "absolute", top: "4px", left: on ? "26px" : "4px", width: "16px", height: "16px", background: on ? "black" : "white", borderRadius: "50%", transition: "0.3s" }} />
     </div>
   );
 }

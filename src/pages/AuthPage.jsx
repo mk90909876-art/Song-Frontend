@@ -34,7 +34,7 @@ export default function AuthPage() {
   return (
     <div style={{
       minHeight: "100vh",
-      background: "var(--bg-primary)",
+      background: "var(--bg-void)",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -48,10 +48,9 @@ export default function AuthPage() {
         pointerEvents: "none",
       }} />
 
-      <div className="fade-in" style={{
+      <div className="fade-in glass" style={{
         width: "100%", maxWidth: "400px",
-        background: "var(--bg-card)",
-        border: "1px solid var(--border)",
+        border: "1px solid var(--border-thin)",
         borderRadius: "16px",
         padding: "40px",
       }}>
@@ -59,7 +58,8 @@ export default function AuthPage() {
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
           <div style={{
             width: "48px", height: "48px",
-            background: "var(--accent)",
+            background: "var(--text-primary)",
+            color: "var(--bg-void)",
             borderRadius: "12px",
             display: "flex", alignItems: "center", justifyContent: "center",
             margin: "0 auto 12px",
@@ -73,16 +73,18 @@ export default function AuthPage() {
 
         {/* Toggle */}
         <div style={{
-          display: "flex", background: "var(--bg-elevated)",
+          display: "flex", background: "rgba(255,255,255,0.03)",
+          border: "1px solid var(--border-thin)",
           borderRadius: "10px", padding: "4px", marginBottom: "24px",
         }}>
           {["login", "signup"].map((m) => (
             <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }}
               style={{
                 flex: 1, padding: "8px", border: "none", cursor: "pointer",
-                borderRadius: "8px", fontSize: "14px", fontWeight: 500,
-                background: mode === m ? "var(--bg-card)" : "transparent",
-                color: mode === m ? "var(--text-primary)" : "var(--text-secondary)",
+                borderRadius: "8px", fontSize: "14px", fontWeight: 800,
+                background: mode === m ? "var(--text-primary)" : "transparent",
+                color: mode === m ? "var(--bg-void)" : "var(--text-secondary)",
+                textTransform: "uppercase",
                 transition: "all 0.2s",
               }}>
               {m === "login" ? "Log in" : "Sign up"}
@@ -131,11 +133,11 @@ export default function AuthPage() {
           )}
 
           <button type="submit" disabled={loading} style={{
-            padding: "12px", background: "var(--accent)", color: "#fff",
+            padding: "12px", background: "var(--text-primary)", color: "var(--bg-void)",
             border: "none", borderRadius: "10px", fontSize: "15px",
-            fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
+            fontWeight: 800, cursor: loading ? "not-allowed" : "pointer",
             opacity: loading ? 0.7 : 1, transition: "all 0.2s",
-            fontFamily: "Syne",
+            fontFamily: "Syne", textTransform: "uppercase"
           }}>
             {loading ? "..." : mode === "login" ? "Log in" : "Create account"}
           </button>
@@ -147,12 +149,12 @@ export default function AuthPage() {
 
 const inputStyle = {
   padding: "12px 14px",
-  background: "var(--bg-elevated)",
-  border: "1px solid var(--border)",
+  background: "rgba(255,255,255,0.03)",
+  border: "1px solid var(--border-thin)",
   borderRadius: "10px",
   color: "var(--text-primary)",
   fontSize: "14px",
   outline: "none",
   width: "100%",
-  fontFamily: "DM Sans",
+  fontFamily: "Outfit",
 };

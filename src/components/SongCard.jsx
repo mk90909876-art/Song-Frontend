@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { usePlayerStore } from "../store/playerStore";
 import LikeButton from "./LikeButton";
-import api from "../utils/api";
 import { useLibraryStore } from "../store/libraryStore";
+
 function formatDuration(s) {
   if (!s) return "";
   const m = Math.floor(s / 60);
@@ -10,13 +10,11 @@ function formatDuration(s) {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-// ── Bottom Sheet ──────────────────────────────────────────────
+// -- Bottom Sheet --
 export function BottomSheet({ song, onClose }) {
-  const { playSong, addToQueue, queue } = usePlayerStore();
-  const { playlists, addSongToPlaylist } = useLibraryStore();
-  const [loadingPlaylists] = useState(false); // playlists already loaded in libraryStore
-
-
+  const { playSong, addToQueue } = usePlayerStore();
+  const { playlists, addSongToPlaylist, likedSongs, toggleLike } = useLibraryStore();
+  const isLiked = likedSongs.some(s => s.id === song.id);
 
   const addToPlaylist = async (playlistId) => {
     try {
@@ -37,77 +35,51 @@ export function BottomSheet({ song, onClose }) {
     onClose();
   };
 
-  // Calculate how far up from bottom the sheet should sit
   const getBottomOffset = () => {
-    const nav = document.getElementById("bottom-nav");
-    const mini = document.querySelector("[data-mini-player]");
-    return (nav?.offsetHeight || 0) + (mini?.offsetHeight || 0);
+    return window.innerWidth <= 768 ? 90 : 24;
   };
 
   return (
     <>
-      {/* Backdrop */}
-      <div onClick={onClose} style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
-        zIndex: 10000, backdropFilter: "blur(2px)",
-      }} />
-
-      {/* Sheet */}
-      <div style={{
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, backdropFilter: "blur(4px)" }} />
+      <div className="glass" style={{
         position: "fixed",
         bottom: `${getBottomOffset()}px`,
-        left: 0, right: 0,
-        background: "var(--bg-secondary)",
-        borderTop: "1px solid var(--border)",
-        borderRadius: "20px 20px 0 0",
+        left: "12px", right: "12px",
+        borderRadius: "24px",
         zIndex: 10001,
         maxHeight: "70vh",
         display: "flex", flexDirection: "column",
-        animation: "slideUp 0.25s ease",
-        boxShadow: "0 -8px 40px rgba(0,0,0,0.6)",
+        animation: "slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1)",
+        padding: "20px"
       }}>
-        <style>{`@keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }`}</style>
-
-        {/* Handle */}
-        <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
-          <div style={{ width: "36px", height: "4px", background: "var(--border)", borderRadius: "2px" }} />
+        <div style={{ display: "flex", justifyContent: "center", paddingBottom: "16px" }}>
+          <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.2)", borderRadius: "2px" }} />
         </div>
 
-        {/* Song info */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 20px 16px" }}>
-          <img src={song.thumbnail} alt="" style={{ width: "48px", height: "48px", borderRadius: "8px", objectFit: "cover" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px" }}>
+          <img src={song.thumbnail} alt="" style={{ width: "56px", height: "56px", borderRadius: "12px", objectFit: "cover", border: "1px solid var(--border-thin)" }} />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: "14px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</div>
-            <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>{song.artist}</div>
+            <div style={{ fontSize: "16px", fontWeight: 700, color: "white" }}>{song.title}</div>
+            <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "2px" }}>{song.artist}</div>
           </div>
         </div>
 
-        <div style={{ height: "1px", background: "var(--border)" }} />
+        <div className="stitch-top" style={{ overflowY: "auto", paddingTop: "12px" }}>
+          <SheetItem icon={isLiked ? "♥" : "♡"} label={isLiked ? "Unlike" : "Like"} onClick={() => { toggleLike(song); onClose(); }} />
+          <SheetItem icon=">" label="Play now" onClick={() => { playSong(song); onClose(); }} />
+          <SheetItem icon=">>" label="Play next" onClick={playNext} />
+          <SheetItem icon="+" label="Add to queue" onClick={addToEnd} />
 
-        {/* Actions */}
-        <div style={{ overflowY: "auto", padding: "8px 0" }}>
-          <SheetItem icon="▶" label="Play now" onClick={() => { playSong(song); onClose(); }} />
-        <SheetItem icon="⏭" label="Play next" onClick={playNext} />
-        <SheetItem icon="⬇" label="Add to end of queue" onClick={addToEnd} />
+          <div className="stitch-top" style={{ margin: "16px 0", opacity: 0.5 }} />
+          <div style={{ padding: "0 12px 12px", fontSize: "10px", fontWeight: 800, color: "var(--text-muted)", letterSpacing: "0.1em" }}>ADD TO PLAYLIST</div>
 
-          <div style={{ height: "1px", background: "var(--border)", margin: "8px 0" }} />
-          <div style={{ padding: "6px 20px", fontSize: "11px", color: "var(--text-muted)", fontWeight: 700, letterSpacing: "0.05em" }}>
-            ADD TO PLAYLIST
-          </div>
-
-          {loadingPlaylists && (
-            <div style={{ padding: "12px 20px", color: "var(--text-muted)", fontSize: "13px" }}>Loading...</div>
-          )}
-          {!loadingPlaylists && playlists.length === 0 && (
-            <div style={{ padding: "12px 20px", color: "var(--text-muted)", fontSize: "13px" }}>
-              No playlists yet — create one in Library
-            </div>
-          )}
           {playlists.map(p => (
-            <SheetItem key={p.id} icon="♫" label={p.name} onClick={() => addToPlaylist(p.id)} />
+            <SheetItem key={p.id} icon="#" label={p.name} onClick={() => addToPlaylist(p.id)} />
           ))}
         </div>
       </div>
+      <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
     </>
   );
 }
@@ -115,23 +87,22 @@ export function BottomSheet({ song, onClose }) {
 function SheetItem({ icon, label, onClick }) {
   return (
     <div onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: "14px",
-      padding: "12px 20px", cursor: "pointer", transition: "background 0.1s",
+      display: "flex", alignItems: "center", gap: "16px",
+      padding: "12px", borderRadius: "12px", cursor: "pointer", transition: "0.2s",
     }}
-      onMouseEnter={e => e.currentTarget.style.background = "var(--bg-elevated)"}
+      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
     >
-      <span style={{ fontSize: "18px", width: "24px", textAlign: "center" }}>{icon}</span>
-      <span style={{ fontSize: "14px" }}>{label}</span>
+      <span style={{ fontSize: "10px", width: "40px", textAlign: "center", fontWeight: 800 }}>{icon}</span>
+      <span style={{ fontSize: "14px", fontWeight: 500 }}>{label}</span>
     </div>
   );
 }
 
-// ── Song Card ─────────────────────────────────────────────────
-export default function SongCard({ song, index }) {
-  const { playSong, currentSong, isPlaying, saavnUnavailable } = usePlayerStore();
+// -- Song Card --
+export default function SongCard({ song, index, onRemove }) {
+  const { playSong, currentSong, isPlaying } = usePlayerStore();
   const isActive = currentSong?.id === song.id;
-  const isUnavailable = isActive && saavnUnavailable;
   const [showSheet, setShowSheet] = useState(false);
 
   return (
@@ -139,45 +110,41 @@ export default function SongCard({ song, index }) {
       <div
         onClick={() => playSong(song)}
         style={{
-          display: "flex", alignItems: "center", gap: "12px",
-          padding: "8px 12px", borderRadius: "8px", cursor: "pointer",
-          background: isActive ? "var(--bg-elevated)" : "transparent",
-          transition: "background 0.15s",
+          display: "flex", alignItems: "center", gap: "16px",
+          padding: "12px 16px", borderRadius: "16px", cursor: "pointer",
+          background: isActive ? "rgba(255,255,255,0.05)" : "transparent",
+          border: isActive ? "1px solid var(--border-thin)" : "1px solid transparent",
+          transition: "0.2s cubic-bezier(0.4, 0, 0.2, 1)",
         }}
-        onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "var(--bg-elevated)"; }}
+        onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
         onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
       >
-        {/* Index */}
-        <div style={{ width: "20px", textAlign: "center", flexShrink: 0, fontSize: "13px", color: isUnavailable ? "#ff4444" : isActive ? "var(--accent)" : "var(--text-muted)" }}>
-          {isUnavailable ? "!" : isActive && isPlaying ? "▶" : (index != null ? index + 1 : "♪")}
+        <div style={{ width: "24px", textAlign: "center", fontSize: "12px", fontWeight: 800, color: isActive ? "white" : "var(--text-muted)" }}>
+          {isActive && isPlaying ? ">" : (index != null ? index + 1 : "#")}
         </div>
 
-        {/* Thumbnail */}
-        <img src={song.thumbnail} alt="" style={{ width: "40px", height: "40px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
+        <img src={song.thumbnail} alt="" style={{ width: "48px", height: "48px", borderRadius: "10px", objectFit: "cover", border: "1px solid var(--border-thin)" }} />
 
-        {/* Title + Artist */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: "14px", fontWeight: 500, color: isUnavailable ? "#ff4444" : isActive ? "var(--accent)" : "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {song.title} {isUnavailable && <span style={{ fontSize: "10px", verticalAlign: "middle" }}>(N/A)</span>}
+          <div style={{ fontSize: "14px", fontWeight: 700, color: isActive ? "white" : "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {song.title}
           </div>
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>{song.artist}</div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.02em" }}>{song.artist}</div>
         </div>
 
-        {/* Duration */}
-        <div style={{ fontSize: "12px", color: "var(--text-muted)", flexShrink: 0 }}>{formatDuration(song.duration)}</div>
+        <div style={{ fontSize: "12px", color: "var(--text-muted)", fontFamily: "monospace" }}>{formatDuration(song.duration)}</div>
 
-        {/* Like */}
         <LikeButton song={song} />
 
-        {/* Three dots */}
+        {onRemove && (
+          <button onClick={(e) => { e.stopPropagation(); onRemove(song.id); }}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: "18px", padding: "8px" }}>✕</button>
+        )}
+
         <button
           onClick={(e) => { e.stopPropagation(); setShowSheet(true); }}
-          title="More options"
-          style={{
-            background: "none", border: "none", cursor: "pointer",
-            color: "var(--text-muted)", fontSize: "18px", padding: "4px",
-            lineHeight: 1,
-          }}>⋯</button>
+          style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: "20px", padding: "8px", cursor: "pointer" }}
+        >...</button>
       </div>
 
       {showSheet && <BottomSheet song={song} onClose={() => setShowSheet(false)} />}

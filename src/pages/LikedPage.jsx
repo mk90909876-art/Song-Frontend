@@ -1,16 +1,11 @@
 import { useLibraryStore } from "../store/libraryStore";
 import { usePlayerStore } from "../store/playerStore";
-import LikeButton from "../components/LikeButton";
+import SongCard from "../components/SongCard";
 
-function formatDuration(s) {
-  if (!s) return "";
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")}`;
-}
+
 
 export default function LikedPage() {
-  const { likedSongs, unlikeSong } = useLibraryStore();
+  const { likedSongs } = useLibraryStore();
   const { playSong, addToQueue, currentSong, isPlaying } = usePlayerStore();
 
   const playAll = () => {
@@ -20,75 +15,41 @@ export default function LikedPage() {
   };
 
   return (
-    <div style={{ padding: "32px", overflowY: "auto", height: "100%" }}>
+    <div style={{ padding: "32px 0", maxWidth: "1200px", margin: "0 auto" }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "24px" }}>
-        <div style={{ width: "64px", height: "64px", background: "var(--accent)", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px" }}>♥</div>
-        <div>
-          <h1 style={{ fontFamily: "Syne", fontSize: "28px", fontWeight: 800 }}>Liked Songs</h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginTop: "4px" }}>{likedSongs.length} songs</p>
+      <div style={{ display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: "clamp(16px, 4vw, 32px)", marginBottom: "clamp(32px, 6vw, 56px)" }}>
+        <div style={{ width: "clamp(100px, 25vw, 180px)", height: "clamp(100px, 25vw, 180px)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-primary)" }}>
+          <div style={{ fontSize: "clamp(80px, 15vw, 140px)", filter: "drop-shadow(0 20px 40px rgba(255,255,255,0.05))", lineHeight: 1 }}>♥</div>
+        </div>
+        <div style={{ paddingBottom: "12px", flex: "1 1 300px" }}>
+          <h1 className="font-syne" style={{ fontSize: "clamp(28px, 6vw, 48px)", fontWeight: 800, letterSpacing: "-0.03em" }}>Liked Songs</h1>
+          <p style={{ color: "var(--text-secondary)", fontSize: "12px", marginTop: "8px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>COLLECTION · {likedSongs.length} TRACKS</p>
+          
+          <div style={{ display: "flex", gap: "12px", marginTop: "24px" }}>
+            {likedSongs.length > 0 && (
+              <button onClick={playAll} style={{ padding: "12px 32px", background: "white", color: "black", border: "none", borderRadius: "12px", cursor: "pointer", fontSize: "14px", fontWeight: 800, textTransform: "uppercase" }}>
+                PLAY ALL
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Play All button */}
-      {likedSongs.length > 0 && (
-        <button onClick={playAll} style={{
-          padding: "10px 28px",
-          background: "var(--accent)",
-          color: "#fff",
-          border: "none",
-          borderRadius: "24px",
-          cursor: "pointer",
-          fontSize: "14px",
-          fontWeight: 700,
-          fontFamily: "Syne",
-          marginBottom: "24px",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-        }}>
-          ▶ Play All
-        </button>
-      )}
-
       {/* Empty state */}
       {likedSongs.length === 0 && (
-        <div style={{ textAlign: "center", marginTop: "60px", color: "var(--text-muted)" }}>
-          <div style={{ fontSize: "48px", marginBottom: "12px" }}>♡</div>
-          <p style={{ fontSize: "16px", fontWeight: 600, marginBottom: "8px" }}>No liked songs yet</p>
-          <p style={{ fontSize: "14px" }}>Click the ♡ on any song to like it</p>
+        <div style={{ textAlign: "center", marginTop: "120px", color: "var(--text-muted)" }}>
+          <div className="font-syne" style={{ fontSize: "80px", fontWeight: 900, marginBottom: "24px", opacity: 0.1 }}>SONG</div>
+          <p style={{ fontSize: "18px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "8px" }}>Your collection is empty.</p>
+          <p style={{ fontSize: "14px", opacity: 0.6 }}>Add some tracks to see them here</p>
         </div>
       )}
 
       {/* Songs list */}
-      {likedSongs.map((song, i) => {
-        const isActive = currentSong?.id === song.id;
-        return (
-          <div key={song.id} onClick={() => playSong(song)}
-            style={{
-              display: "flex", alignItems: "center", gap: "12px",
-              padding: "8px 12px", borderRadius: "8px", cursor: "pointer",
-              background: isActive ? "var(--bg-elevated)" : "transparent",
-              transition: "background 0.15s",
-            }}
-            onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "var(--bg-elevated)"; }}
-            onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
-          >
-            <div style={{ width: "20px", textAlign: "center", color: isActive ? "var(--accent)" : "var(--text-muted)", fontSize: "13px" }}>
-              {isActive && isPlaying ? "▶" : i + 1}
-            </div>
-            <img src={song.thumbnail} alt="" style={{ width: "40px", height: "40px", borderRadius: "6px", objectFit: "cover" }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "14px", fontWeight: 500, color: isActive ? "var(--accent)" : "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</div>
-              <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>{song.artist}</div>
-            </div>
-            <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>{formatDuration(song.duration)}</div>
-            <LikeButton song={song} />
-            <button onClick={(e) => { e.stopPropagation(); addToQueue(song); }} title="Add to queue"
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: "16px", padding: "4px" }}>+</button>
-          </div>
-        );
-      })}
+      <div className="stitch-top" style={{ paddingTop: "24px", display: "flex", flexDirection: "column", gap: "4px" }}>
+        {likedSongs.map((song, i) => (
+          <SongCard key={song.id} song={song} index={i} />
+        ))}
+      </div>
     </div>
   );
-}
+}

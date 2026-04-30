@@ -6,19 +6,19 @@ import { saavnToSong } from "../utils/saavn";
 import api from "../utils/api";
 
 const TABS = ["Songs", "Artists", "Playlists"];
-const truncate = (str, n = 40) => str?.length > n ? str.slice(0, n).trimEnd() + "…" : str;
+const truncate = (str, n = 40) => str?.length > n ? str.slice(0, n).trimEnd() + "..." : str;
 
 const getImage = (images, quality = "500x500") =>
   images?.find(i => i.quality === quality)?.url || images?.[images.length - 1]?.url || "";
 
-// ── Playlist Card ─────────────────────────────────────────────
+// -- Playlist Card --
 const PlaylistCard = ({ playlist }) => {
   const [expanded, setExpanded] = useState(false);
   const [songs, setSongs] = useState([]);
   const [loadingSongs, setLoadingSongs] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const { playSong, addToQueue } = usePlayerStore();
+  const { playSong } = usePlayerStore();
   const { createPlaylist, addSongToPlaylist } = useLibraryStore();
 
   const loadSongs = async () => {
@@ -69,60 +69,41 @@ const PlaylistCard = ({ playlist }) => {
   };
 
   return (
-    <div style={{ borderRadius: "12px", overflow: "hidden", background: "var(--bg-elevated)", marginBottom: "8px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", cursor: "pointer" }}
+    <div className="glass" style={{ borderRadius: "16px", overflow: "hidden", border: "1px solid var(--border-thin)", marginBottom: "12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "16px", padding: "16px", cursor: "pointer" }}
         onClick={loadSongs}>
-        <img src={playlist.thumbnail} alt="" style={{ width: "52px", height: "52px", borderRadius: "8px", objectFit: "cover", flexShrink: 0 }} />
+        <img src={playlist.thumbnail} alt="" style={{ width: "60px", height: "60px", borderRadius: "12px", objectFit: "cover", border: "1px solid var(--border-thin)" }} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(playlist.title, 45)}</div>
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>
-            <span>{playlist.songCount} songs · {playlist.language}</span>
+          <div className="font-syne" style={{ fontSize: "16px", fontWeight: 700, color: "white" }}>{truncate(playlist.title, 45)}</div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            {playlist.songCount} TRACKS · {playlist.language}
           </div>
         </div>
-        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", gap: "8px" }} onClick={e => e.stopPropagation()}>
           <button onClick={saveToLibrary} style={{
-            padding: "6px 12px", borderRadius: "20px", border: "1px solid var(--accent)",
-            background: saved ? "var(--accent)" : "transparent",
-            color: saved ? "#fff" : "var(--accent)",
-            fontSize: "12px", fontWeight: 600, cursor: saving ? "wait" : "pointer",
-            whiteSpace: "nowrap", transition: "all 0.2s",
+            padding: "8px 16px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.15)",
+            background: saved ? "white" : "transparent",
+            color: saved ? "black" : "white",
+            fontSize: "11px", fontWeight: 800, cursor: saving ? "wait" : "pointer",
+            textTransform: "uppercase", letterSpacing: "0.05em"
           }}>
-            {saving ? "Saving…" : saved ? "✓ Saved" : "+ Library"}
+            {saving ? "..." : saved ? "SAVED" : "+ LIB"}
           </button>
           <button onClick={playAll} style={{
-            width: "34px", height: "34px", borderRadius: "50%",
-            background: "var(--accent)", border: "none", color: "#fff",
-            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px",
-          }}>▶</button>
+            width: "36px", height: "36px", borderRadius: "50%",
+            background: "white", border: "none", color: "black",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+          }}>PLAY</button>
         </div>
-        <div style={{ color: "var(--text-muted)", fontSize: "16px", transition: "transform 0.2s", transform: expanded ? "rotate(180deg)" : "none" }}>⌄</div>
       </div>
 
       {expanded && (
-        <div style={{ borderTop: "1px solid var(--border)", padding: "4px 0" }}>
+        <div className="stitch-top" style={{ padding: "8px 0" }}>
           {loadingSongs ? (
-            <div style={{ padding: "16px", color: "var(--text-muted)", textAlign: "center", fontSize: "13px" }}>Loading songs…</div>
-          ) : songs.length === 0 ? (
-            <div style={{ padding: "16px", color: "var(--text-muted)", textAlign: "center", fontSize: "13px" }}>No songs found</div>
+            <div style={{ padding: "24px", color: "var(--text-muted)", textAlign: "center", fontSize: "12px", letterSpacing: "0.1em" }}>LOADING...</div>
           ) : (
             songs.map((song, i) => (
-              <div key={song.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "7px 12px", cursor: "pointer", transition: "background 0.15s" }}
-                onMouseEnter={e => e.currentTarget.style.background = "var(--bg-secondary)"}
-                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                onClick={() => {
-                  const rest = songs.slice(i + 1);
-                  playSong(song, { fromQueue: true, updatedQueue: rest });
-                }}>
-                <div style={{ width: "18px", textAlign: "center", color: "var(--text-muted)", fontSize: "12px", flexShrink: 0 }}>{i + 1}</div>
-                <img src={song.thumbnail} alt="" style={{ width: "36px", height: "36px", borderRadius: "4px", objectFit: "cover", flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truncate(song.title, 50)}</div>
-                  <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>{truncate(song.artist, 35)}</div>
-                </div>
-                <div style={{ fontSize: "11px", color: "var(--text-muted)", flexShrink: 0 }}>
-                  {song.duration ? `${Math.floor(song.duration / 60)}:${String(song.duration % 60).padStart(2, "0")}` : ""}
-                </div>
-              </div>
+              <SongCard key={song.id} song={song} index={i} />
             ))
           )}
         </div>
@@ -131,14 +112,14 @@ const PlaylistCard = ({ playlist }) => {
   );
 };
 
-// ── Search Page ───────────────────────────────────────────────
+// -- Search Page --
 export default function SearchPage() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState({ songs: [], artists: [], playlists: [] });
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [activeTab, setActiveTab] = useState("Songs");
-  const [artistSongs, setArtistSongs] = useState(null); // { artist, songs }
+  const [artistSongs, setArtistSongs] = useState(null);
   const debounceRef = useRef(null);
   const { playSong, searchHistory, addSearchHistory, removeSearchHistory, clearSearchHistory } = usePlayerStore();
 
@@ -191,126 +172,87 @@ export default function SearchPage() {
     debounceRef.current = setTimeout(() => search(val, activeTab, false), 500);
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    clearTimeout(debounceRef.current);
-    search(query, activeTab, true);
-  };
-
   const switchTab = (tab) => {
     setActiveTab(tab);
     setArtistSongs(null);
     if (query.trim()) search(query, tab, false);
   };
 
-  const currentResults = results[activeTab.toLowerCase()] || [];
-
   return (
-    <div style={{ padding: "32px", overflowY: "auto", height: "100%" }}>
-      <h1 style={{ fontFamily: "Syne", fontSize: "28px", fontWeight: 800, marginBottom: "24px" }}>Search</h1>
+    <div style={{ padding: "32px 0", maxWidth: "1200px", margin: "0 auto" }}>
+      <h1 className="font-syne" style={{ fontSize: "36px", fontWeight: 800, marginBottom: "32px", letterSpacing: "-0.03em" }}>Search</h1>
 
       {/* Search bar */}
-      <form onSubmit={handleSubmit} style={{ marginBottom: "20px" }}>
-        <div style={{ position: "relative", maxWidth: "500px" }}>
-          <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", fontSize: "18px", pointerEvents: "none" }}>⌕</span>
-          <input value={query} onChange={handleInput} placeholder="Search songs, artists, playlists..."
-            autoFocus style={{ width: "100%", padding: "12px 14px 12px 42px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: "12px", color: "var(--text-primary)", fontSize: "15px", outline: "none", fontFamily: "DM Sans", boxSizing: "border-box" }} />
+      <form onSubmit={e => { e.preventDefault(); search(query, activeTab, true); }} style={{ marginBottom: "32px" }}>
+        <div className="glass" style={{ position: "relative", maxWidth: "600px", borderRadius: "16px", border: "1px solid var(--border-thin)" }}>
+          <span style={{ position: "absolute", left: "18px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", fontSize: "20px", fontWeight: 800 }}>⌕</span>
+          <input value={query} onChange={handleInput} placeholder="Search tracks, artists, collections..."
+            autoFocus style={{ width: "100%", padding: "16px 18px 16px 52px", background: "transparent", border: "none", color: "var(--text-primary)", fontSize: "16px", outline: "none", fontFamily: "Outfit" }} />
         </div>
       </form>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: "8px", marginBottom: "24px" }}>
+      <div style={{ display: "flex", gap: "12px", marginBottom: "32px" }}>
         {TABS.map(tab => (
           <button key={tab} onClick={() => switchTab(tab)} style={{
-            padding: "8px 18px", borderRadius: "20px", border: "none", cursor: "pointer",
-            fontSize: "13px", fontWeight: 600, fontFamily: "Syne",
-            background: activeTab === tab ? "var(--accent)" : "var(--bg-elevated)",
-            color: activeTab === tab ? "#fff" : "var(--text-secondary)",
-            transition: "all 0.15s",
+            padding: "10px 24px", borderRadius: "12px", border: "1px solid var(--border-thin)", cursor: "pointer",
+            fontSize: "12px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em",
+            background: activeTab === tab ? "var(--text-primary)" : "var(--bg-glass)",
+            color: activeTab === tab ? "var(--bg-void)" : "var(--text-primary)",
+            transition: "0.2s cubic-bezier(0.4, 0, 0.2, 1)",
           }}>{tab}</button>
         ))}
       </div>
 
-      {loading && <div style={{ color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "8px" }}><span className="spin">↻</span> Searching...</div>}
+      {loading && <div style={{ color: "var(--text-muted)", fontSize: "12px", letterSpacing: "0.1em" }}>SEARCHING...</div>}
 
-      {!loading && searched && currentResults.length === 0 && !artistSongs && (
-        <div style={{ color: "var(--text-muted)" }}>No {activeTab.toLowerCase()} found for "{query}"</div>
-      )}
-
-      {/* Songs */}
-      {!loading && activeTab === "Songs" && results.songs.length > 0 && (
-        <div className="fade-in">
-          <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px" }}>{results.songs.length} results</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-            {results.songs.map((song, i) => <SongCard key={song.id} song={song} index={i} />)}
-          </div>
-        </div>
-      )}
-
-      {/* Artists */}
-      {!loading && activeTab === "Artists" && !artistSongs && results.artists.length > 0 && (
-        <div className="fade-in" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "16px" }}>
-          {results.artists.map(artist => (
-            <div key={artist.id} onClick={() => loadArtistSongs(artist)} style={{ cursor: "pointer", textAlign: "center" }}>
-              <div style={{ width: "100%", aspectRatio: "1", borderRadius: "50%", overflow: "hidden", marginBottom: "10px", background: "var(--bg-elevated)" }}>
-                <img src={getImage(artist.image)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+        {activeTab === "Songs" && results.songs.map((song, i) => <SongCard key={song.id} song={song} index={i} />)}
+        {activeTab === "Playlists" && results.playlists.map(p => <PlaylistCard key={p.id} playlist={p} />)}
+        
+        {activeTab === "Artists" && !artistSongs && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "24px" }}>
+            {results.artists.map(artist => (
+              <div key={artist.id} onClick={() => loadArtistSongs(artist)} className="glass" style={{ cursor: "pointer", textAlign: "center", padding: "20px", borderRadius: "24px", border: "1px solid var(--border-thin)" }}>
+                <img src={getImage(artist.image)} alt="" style={{ width: "100%", aspectRatio: "1", borderRadius: "50%", objectFit: "cover", marginBottom: "16px", border: "1px solid var(--border-thin)" }} />
+                <div style={{ fontSize: "14px", fontWeight: 700 }}>{artist.name}</div>
+                <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px", textTransform: "uppercase" }}>{artist.role}</div>
               </div>
-              <div style={{ fontSize: "13px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{artist.name}</div>
-              <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>{artist.role}</div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === "Artists" && artistSongs && (
+          <div className="fade-in">
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
+              <button onClick={() => setArtistSongs(null)} style={{ background: "none", border: "none", color: "var(--text-primary)", fontSize: "20px", cursor: "pointer" }}>BACK</button>
+              <img src={getImage(artistSongs.artist.image)} alt="" style={{ width: "48px", height: "48px", borderRadius: "50%", objectFit: "cover" }} />
+              <span className="font-syne" style={{ fontSize: "18px", fontWeight: 700 }}>{artistSongs.artist.name}</span>
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* Artist songs drilldown */}
-      {!loading && activeTab === "Artists" && artistSongs && (
-        <div className="fade-in">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-            <button onClick={() => setArtistSongs(null)} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: "20px", cursor: "pointer" }}>←</button>
-            <img src={getImage(artistSongs.artist.image)} alt="" style={{ width: "48px", height: "48px", borderRadius: "50%", objectFit: "cover" }} />
-            <span style={{ fontSize: "18px", fontWeight: 700, fontFamily: "Syne" }}>{artistSongs.artist.name}</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              {artistSongs.songs.map((song, i) => <SongCard key={song.id} song={song} index={i} />)}
+            </div>
           </div>
-          {artistSongs.songs.length === 0
-            ? <div style={{ color: "var(--text-muted)" }}>No songs found</div>
-            : <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                {artistSongs.songs.map((song, i) => <SongCard key={song.id} song={song} index={i} />)}
-              </div>
-          }
-        </div>
-      )}
-
-      {/* Playlists */}
-      {!loading && activeTab === "Playlists" && results.playlists.length > 0 && (
-        <div className="fade-in">
-          <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px" }}>{results.playlists.length} playlists · Click to expand songs</p>
-          {results.playlists.map(p => <PlaylistCard key={p.id} playlist={p} />)}
-        </div>
-      )}
+        )}
+      </div>
 
       {!searched && !loading && (
-        <div>
-          {searchHistory.length > 0 ? (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-                <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.06em" }}>RECENT SEARCHES</span>
-                <button onClick={clearSearchHistory} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: "12px", cursor: "pointer" }}>Clear all</button>
+        <div style={{ marginTop: "16px" }}>
+          {searchHistory.length > 0 && (
+            <div className="stitch-top" style={{ paddingTop: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                <span style={{ fontSize: "10px", fontWeight: 800, color: "var(--text-muted)", letterSpacing: "0.15em" }}>RECENT SEARCHES</span>
+                <button onClick={clearSearchHistory} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: "10px", fontWeight: 800, cursor: "pointer", textTransform: "uppercase" }}>Clear all</button>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                 {searchHistory.map(h => (
-                  <div key={h} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "8px", cursor: "pointer", transition: "background 0.15s" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "var(--bg-elevated)"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <span style={{ fontSize: "16px", color: "var(--text-muted)" }}>↺</span>
-                    <span onClick={() => { setQuery(h); search(h, activeTab, false); }} style={{ flex: 1, fontSize: "14px", cursor: "pointer" }}>{h}</span>
-                    <button onClick={() => removeSearchHistory(h)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "16px", padding: "2px 6px" }}>✕</button>
+                  <div key={h} className="glass" style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 16px", borderRadius: "12px", border: "1px solid var(--border-thin)", cursor: "pointer" }}
+                    onClick={() => { setQuery(h); search(h, activeTab, false); }}>
+                    <span style={{ fontSize: "14px" }}>{h}</span>
+                    <button onClick={(e) => { e.stopPropagation(); removeSearchHistory(h); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>X</button>
                   </div>
                 ))}
               </div>
-            </div>
-          ) : (
-            <div style={{ color: "var(--text-muted)", marginTop: "40px", textAlign: "center" }}>
-              <div style={{ fontSize: "48px", marginBottom: "12px" }}>♪</div>
-              <p>Search for any song, artist or playlist</p>
             </div>
           )}
         </div>

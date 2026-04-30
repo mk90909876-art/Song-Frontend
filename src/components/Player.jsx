@@ -57,123 +57,6 @@ const Icons = {
   Queue: () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="100%" height="100%"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="3" cy="18" r="1" fill="currentColor" stroke="none"/></svg>),
 };
 
-// ── Draggable Queue ───────────────────────────────────────────
-const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }) => {
-  const [draggingIdx, setDraggingIdx] = useState(null);
-  const [overIdx, setOverIdx] = useState(null);
-  const [liftedIdx, setLiftedIdx] = useState(null);
-  const rowRefs = useRef([]);
-  const containerRef = useRef(null);
-  const state = useRef({ active: false, index: null, startY: 0, holdTimer: null, overIdx: null });
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const onMove = (e) => {
-      if (!state.current.active) {
-        const dy = Math.abs(e.touches[0].clientY - state.current.startY);
-        if (dy > 8) { clearTimeout(state.current.holdTimer); state.current.index = null; }
-        return;
-      }
-      e.preventDefault();
-      const touchY = e.touches[0].clientY;
-      for (let j = 0; j < rowRefs.current.length; j++) {
-        const rect = rowRefs.current[j]?.getBoundingClientRect();
-        if (rect && touchY >= rect.top && touchY <= rect.bottom) {
-          state.current.overIdx = j; setOverIdx(j); break;
-        }
-      }
-    };
-    container.addEventListener("touchmove", onMove, { passive: false });
-    return () => container.removeEventListener("touchmove", onMove);
-  }, [queue.length]);
-
-  const onTouchStart = (e, i) => {
-    state.current = { active: false, index: i, startY: e.touches[0].clientY, holdTimer: null, overIdx: null };
-    state.current.holdTimer = setTimeout(() => {
-      state.current.active = true; setDraggingIdx(i); setLiftedIdx(i);
-    }, 400);
-  };
-  const onTouchEnd = () => {
-    clearTimeout(state.current.holdTimer);
-    const { active, index, overIdx: over } = state.current;
-    if (!active) { if (index !== null) playFromQueue(index); }
-    else if (index !== null && over !== null && index !== over) moveQueueItem(index, over);
-    state.current = { active: false, index: null, startY: 0, holdTimer: null, overIdx: null };
-    setDraggingIdx(null); setOverIdx(null); setLiftedIdx(null);
-  };
-
-  if (queue.length === 0) return (
-    <div style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", textAlign: "center", padding: "24px 0" }}>Queue is empty</div>
-  );
-
-  return (
-    <div ref={containerRef} style={{ overflowY: "auto", flex: 1, WebkitOverflowScrolling: "touch" }}>
-      {queue.map((song, i) => {
-        const isLifted = liftedIdx === i;
-        const isOver = overIdx === i && draggingIdx !== i;
-        return (
-          <div key={`${song.id}-${i}`} ref={el => { rowRefs.current[i] = el; }}
-            draggable
-            onDragStart={() => setDraggingIdx(i)}
-            onDragOver={e => { e.preventDefault(); setOverIdx(i); }}
-            onDrop={() => { if (draggingIdx !== null && draggingIdx !== i) moveQueueItem(draggingIdx, i); setDraggingIdx(null); setOverIdx(null); }}
-            onDragEnd={() => { setDraggingIdx(null); setOverIdx(null); }}
-            onTouchStart={e => onTouchStart(e, i)} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
-            style={{
-              display: "flex", alignItems: "center", gap: "8px", padding: "8px",
-              borderRadius: "10px", marginBottom: "4px",
-              background: isOver ? "rgba(255,255,255,0.2)" : isLifted ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.05)",
-              opacity: draggingIdx === i && !isLifted ? 0.3 : 1,
-              transform: isLifted ? "scale(1.02)" : "scale(1)",
-              boxShadow: isLifted ? "0 8px 24px rgba(0,0,0,0.5)" : "none",
-              transition: "background 0.1s, transform 0.15s",
-              userSelect: "none",
-            }}>
-            <div style={{ width: "20px", height: "20px", flexShrink: 0, color: isLifted ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.2)" }}>
-              <Icons.DragHandle />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0, overflow: "hidden" }}>
-              <img src={song.thumbnail} alt="" style={{ width: "38px", height: "38px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
-              <div style={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
-                <ScrollingText text={song.title} style={{ fontSize: "13px", fontWeight: 600, color: "white" }} />
-                <ScrollingText text={song.artist} style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "2px" }} />
-              </div>
-            </div>
-            <button 
-              onClick={e => { e.stopPropagation(); removeFromQueue(i); }}
-              onTouchStart={e => e.stopPropagation()}
-              onTouchEnd={e => e.stopPropagation()}
-              style={{ 
-                background: "none", border: "none", color: "rgba(255,100,100,0.7)", 
-                cursor: "pointer", width: "40px", height: "40px", padding: "8px", 
-                flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                marginRight: "-4px" 
-              }}>
-              <Icons.Remove />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-const ProgressBar = ({ progress, duration, onSeekStart, onSeekChange, onSeekEnd, seekValue, seeking }) => {
-  const pct = duration ? ((seeking ? seekValue : progress) / duration) * 100 : 0;
-  return (
-    <div style={{ position: "relative", width: "100%" }}>
-      <div style={{ height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px" }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: "var(--accent)", borderRadius: "2px", transition: seeking ? "none" : "width 0.3s linear" }} />
-      </div>
-      <input type="range" min="0" max={duration || 100} value={seeking ? seekValue : progress}
-        onMouseDown={onSeekStart} onTouchStart={onSeekStart}
-        onChange={onSeekChange} onMouseUp={onSeekEnd} onTouchEnd={onSeekEnd}
-        style={{ position: "absolute", top: "-8px", left: 0, width: "100%", opacity: 0, cursor: "pointer", height: "20px", margin: 0 }} />
-    </div>
-  );
-};
-
 export default function Player() {
   const {
     currentSong, isPlaying, queue, shuffle, repeat, volume,
@@ -189,6 +72,7 @@ export default function Player() {
   const [seekValue, setSeekValue] = useState(0);
   const [showQueue, setShowQueue] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [isWide, setIsWide] = useState(window.innerWidth >= 1024);
   const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
   const [showMenu, setShowMenu] = useState(false);
 
@@ -202,35 +86,23 @@ export default function Player() {
 
   // Responsive
   useEffect(() => {
-    const handle = () => { setIsMobile(window.innerWidth <= 768); setIsLandscape(window.innerWidth > window.innerHeight); };
+    const handle = () => { 
+      setIsMobile(window.innerWidth <= 768); 
+      setIsWide(window.innerWidth >= 1024);
+      setIsLandscape(window.innerWidth > window.innerHeight); 
+    };
     window.addEventListener("resize", handle);
     window.addEventListener("orientationchange", () => setTimeout(handle, 150));
     return () => window.removeEventListener("resize", handle);
   }, []);
 
-  // Unlock pending audio on user gesture (iOS)
-  useEffect(() => {
-    const unlock = () => {
-      if (window._pendingPlay && window._audioEl?.src) {
-        window._audioEl.play().then(() => { window._pendingPlay = false; }).catch(() => {});
-      }
-    };
-    document.addEventListener("touchstart", unlock, { passive: true });
-    document.addEventListener("click", unlock);
-    return () => {
-      document.removeEventListener("touchstart", unlock);
-      document.removeEventListener("click", unlock);
-    };
-  }, []);
-
   if (!currentSong) return null;
 
-  const btn = (color = "rgba(255,255,255,0.7)") => ({
+  const btn = (color = "var(--text-primary)") => ({
     background: "none", border: "none", color, cursor: "pointer",
     display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%",
+    transition: "0.2s cubic-bezier(0.4, 0, 0.2, 1)",
   });
-
-  const isWide = !isMobile || isLandscape;
 
   const handleSeekStart = () => { setSeeking(true); setSeekValue(progress); };
   const handleSeekChange = (e) => setSeekValue(parseFloat(e.target.value));
@@ -244,188 +116,178 @@ export default function Player() {
   return (
     <>
       {/* ── Mini Player ── */}
-      <div data-mini-player="true" style={{ background: "var(--bg-secondary)", borderTop: "1px solid var(--border)", position: isMobile ? "fixed" : "relative", bottom: isMobile ? `${navHeight}px` : "auto", left: 0, right: 0, zIndex: 49, boxSizing: "border-box", width: "100%" }}>
-        {/* Progress line */}
-        <div style={{ height: "3px", background: "var(--border)", position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${duration ? (progress / duration) * 100 : 0}%`, background: "var(--accent)", transition: "width 0.5s linear" }} />
-          <input type="range" min="0" max={duration || 100} value={seeking ? seekValue : progress}
-            onMouseDown={handleSeekStart} onTouchStart={handleSeekStart}
-            onChange={handleSeekChange} onMouseUp={handleSeekEnd} onTouchEnd={handleSeekEnd}
-            style={{ position: "absolute", top: "-8px", left: 0, width: "100%", opacity: 0, cursor: "pointer", height: "20px", margin: 0 }} />
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px" }}>
-          <div onClick={() => setShowFullScreen(true)} style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: 0, cursor: "pointer" }}>
+      <div data-mini-player="true" className="glass" style={{ 
+        position: "fixed", 
+        bottom: isMobile ? "calc(env(safe-area-inset-bottom) + 90px)" : "24px", 
+        left: isMobile ? "12px" : "auto", 
+        right: isMobile ? "12px" : "24px", 
+        width: isMobile ? "calc(100% - 24px)" : "420px",
+        zIndex: 100, 
+        borderRadius: "16px",
+        padding: "8px 12px",
+        border: "1px solid var(--border-thin)",
+        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div onClick={() => setShowFullScreen(true)} style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0, cursor: "pointer" }}>
             <div style={{ position: "relative", flexShrink: 0 }}>
-              <img src={currentSong.thumbnail} alt="" style={{ width: "42px", height: "42px", borderRadius: "8px", objectFit: "cover", display: "block" }} />
+              <img src={currentSong.thumbnail} alt="" style={{ width: "44px", height: "44px", borderRadius: "8px", objectFit: "cover", border: "1px solid var(--border-thin)" }} />
               {isPlaying && (
-                <div style={{ position: "absolute", bottom: "3px", right: "3px", display: "flex", gap: "2px", alignItems: "flex-end" }}>
+                <div style={{ position: "absolute", bottom: "4px", right: "4px", display: "flex", gap: "2px", alignItems: "flex-end" }}>
                   {[1, 0.6, 0.8].map((h, i) => (
-                    <div key={i} style={{ width: "3px", height: `${h * 10}px`, background: "var(--accent)", borderRadius: "1px", animation: `songbounce ${0.6 + i * 0.15}s ease-in-out infinite alternate` }} />
+                    <div key={i} style={{ width: "2px", height: `${h * 8}px`, background: "white", borderRadius: "1px", animation: `songbounce ${0.6 + i * 0.15}s ease-in-out infinite alternate` }} />
                   ))}
                 </div>
               )}
-              {saavnUnavailable && (
-                <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color: "white" }}>N/A</div>
-              )}
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <ScrollingText text={currentSong.title} style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }} />
-              <ScrollingText text={currentSong.artist} style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }} />
+              <ScrollingText text={currentSong.title} style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)" }} />
+              <ScrollingText text={currentSong.artist} style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "1px", textTransform: "uppercase", letterSpacing: "0.02em" }} />
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
-            {!isMobile && <button onClick={prevSong} style={{ ...btn("var(--text-secondary)"), width: "36px", height: "36px" }}><Icons.Prev /></button>}
+          
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
             <button onClick={togglePlay} disabled={saavnUnavailable}
-              style={{ background: "var(--accent)", border: "none", color: "white", borderRadius: "50%", width: "38px", height: "38px", cursor: saavnUnavailable ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "10px", flexShrink: 0, opacity: saavnUnavailable ? 0.4 : 1 }}>
+              style={{ background: "white", border: "none", color: "black", borderRadius: "50%", width: "36px", height: "36px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "10px", opacity: saavnUnavailable ? 0.3 : 1 }}>
               {isPlaying ? <Icons.Pause /> : <Icons.Play />}
             </button>
-            <button onClick={nextSong} style={{ ...btn("var(--text-secondary)"), width: "36px", height: "36px" }}><Icons.Next /></button>
+            <button onClick={nextSong} style={{ ...btn("var(--text-secondary)"), width: "32px", height: "32px" }}><Icons.Next /></button>
           </div>
-          {!isMobile && (
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-              <div style={{ width: "16px", height: "16px", color: "var(--text-secondary)" }}><Icons.Volume level={volume} /></div>
-              <input type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))}
-                style={{ width: "80px", accentColor: "var(--accent)", cursor: "pointer" }} />
-              <span style={{ fontSize: "11px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{formatTime(progress)} / {formatTime(duration)}</span>
-            </div>
-          )}
+        </div>
+        
+        {/* Progress bar integrated at bottom of mini player */}
+        <div style={{ height: "2px", background: "rgba(255,255,255,0.1)", marginTop: "8px", borderRadius: "1px", overflow: "hidden", position: "relative" }}>
+          <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${duration ? (progress / duration) * 100 : 0}%`, background: "white", transition: "width 0.4s cubic-bezier(0.23, 1, 0.32, 1)" }} />
         </div>
       </div>
 
       {/* ── Full Screen Player ── */}
       {showFullScreen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 9999, overflow: "hidden" }}>
-          <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${currentSong.thumbnail})`, backgroundSize: "cover", backgroundPosition: "center", filter: "blur(60px) brightness(0.25) saturate(1.5)", transform: "scale(1.2)" }} />
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.7))" }} />
-
-          <div style={{ position: "relative", zIndex: 1, height: "100%", display: "flex", flexDirection: "column" }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "var(--bg-void)", overflowY: "auto", overflowX: "hidden" }}>
+          <div style={{ position: "fixed", inset: 0, backgroundImage: `url(${currentSong.thumbnail})`, backgroundSize: "cover", backgroundPosition: "center", filter: "blur(80px) brightness(0.2) saturate(0)", transform: "scale(1.2)", zIndex: 0 }} />
+          
+          <div style={{ position: "relative", zIndex: 1, minHeight: "100%", display: "flex", flexDirection: "column", padding: isMobile ? "24px 16px 32px" : "32px", overflow: "hidden" }}>
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 8px", flexShrink: 0 }}>
-              <button onClick={() => setShowFullScreen(false)} style={{ ...btn("white"), width: "44px", height: "44px", touchAction: "manipulation", padding: "10px" }}><Icons.ChevronDown /></button>
-              <div style={{ textAlign: "center", minWidth: 0, flex: 1, margin: "0 12px" }}>
-                <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px" }}>Now Playing</div>
-                <ScrollingText text={currentSong.artist} style={{ fontSize: "12px", color: "rgba(255,255,255,0.8)", fontWeight: 600, marginTop: "2px" }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: isMobile ? "12px" : "32px" }}>
+              <button onClick={() => setShowFullScreen(false)} style={{ ...btn(), width: "48px", height: "48px", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-thin)" }}><Icons.ChevronDown /></button>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: "10px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)" }}>Current Playback</div>
               </div>
-              <button onClick={e => { e.stopPropagation(); setShowMenu(true); }} style={{ ...btn("white"), width: "44px", height: "44px", touchAction: "manipulation", padding: "10px", fontSize: "20px", letterSpacing: "2px" }}>⋮</button>
+              <button onClick={() => setShowMenu(true)} style={{ ...btn(), width: "48px", height: "48px", fontSize: "20px" }}>⋮</button>
             </div>
 
-            {/* Body */}
-            <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: isWide ? "row" : "column", overflow: "hidden" }}>
-              {/* Left: Controls */}
-              <div style={{ width: isWide ? "50%" : "100%", flexShrink: 0, display: "flex", flexDirection: "column", justifyContent: "center", padding: "12px 36px", overflow: isWide ? "visible" : "auto", boxSizing: "border-box" }}>
-                {/* Album art */}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: "20px" }}>
-                  <div style={{ position: "relative" }}>
-                    <img src={currentSong.thumbnail} alt="" style={{ width: isWide ? "min(280px, 34vw)" : "min(240px, 60vw)", height: isWide ? "min(280px, 34vw)" : "min(240px, 60vw)", borderRadius: "16px", objectFit: "cover", boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }} />
-                    {saavnUnavailable && (
-                      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", borderRadius: "16px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-                        <div style={{ fontSize: "32px" }}>😕</div>
-                        <div style={{ fontSize: "13px", color: "white", textAlign: "center", padding: "0 16px" }}>Not available on JioSaavn</div>
-                      </div>
-                    )}
-                  </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: isWide ? "row" : "column", gap: isMobile ? "16px" : "48px", alignItems: "center", justifyContent: "center", minHeight: 0 }}>
+              {/* Art + Info */}
+              <div style={{ width: isWide ? "45%" : "100%", textAlign: isWide ? "left" : "center", display: "flex", flexDirection: "column", alignItems: isWide ? "flex-start" : "center", justifyContent: "center" }}>
+                <div style={{ position: "relative", marginBottom: isMobile ? "16px" : "40px" }}>
+                  <img src={currentSong.thumbnail} alt="" style={{ width: isWide ? "400px" : "min(70vw, 35vh)", height: isWide ? "400px" : "min(70vw, 35vh)", maxWidth: "450px", maxHeight: "450px", borderRadius: isMobile ? "16px" : "24px", objectFit: "cover", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", border: "1px solid var(--border-thin)" }} />
                 </div>
-
-                {/* Title */}
-                <div style={{ marginBottom: "12px" }}>
-                  <ScrollingText text={currentSong.title} style={{ fontSize: isWide ? "17px" : "19px", fontWeight: 700, color: "white", marginBottom: "4px" }} />
-                  <ScrollingText text={currentSong.artist} style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)" }} />
+                <div style={{ width: "100%", minWidth: 0 }}>
+                  <h2 className="font-syne" style={{ fontSize: isWide ? "36px" : "22px", fontWeight: 800, marginBottom: "4px", letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.title}</h2>
+                  <p style={{ fontSize: isMobile ? "12px" : "16px", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.artist}</p>
                 </div>
+              </div>
 
-                {/* Progress */}
-                <div style={{ marginBottom: "10px" }}>
+              {/* Controls + Queue */}
+              <div style={{ width: isWide ? "45%" : "100%", display: "flex", flexDirection: "column", gap: isMobile ? "12px" : "32px" }}>
+                <div className="glass" style={{ padding: isMobile ? "16px" : "32px", borderRadius: "24px" }}>
                   <ProgressBar progress={progress} duration={duration} seeking={seeking} seekValue={seekValue} onSeekStart={handleSeekStart} onSeekChange={handleSeekChange} onSeekEnd={handleSeekEnd} />
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "5px" }}>
-                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)" }}>{formatTime(seeking ? seekValue : progress)}</span>
-                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)" }}>{formatTime(duration)}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "12px" }}>
+                    <span style={{ fontSize: "12px", color: "var(--text-muted)", fontFamily: "monospace" }}>{formatTime(seeking ? seekValue : progress)}</span>
+                    <span style={{ fontSize: "12px", color: "var(--text-muted)", fontFamily: "monospace" }}>{formatTime(duration)}</span>
                   </div>
-                </div>
 
-                {/* Controls */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", marginBottom: "14px" }}>
-                  <button onClick={prevSong} style={{ ...btn("white"), width: "40px", height: "40px" }}><Icons.Prev /></button>
-                  <button onClick={togglePlay} disabled={saavnUnavailable}
-                    style={{ background: "white", border: "none", color: "black", borderRadius: "50%", width: "62px", height: "62px", cursor: saavnUnavailable ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "17px", boxShadow: "0 8px 24px rgba(255,255,255,0.2)", opacity: saavnUnavailable ? 0.4 : 1 }}>
-                    {isPlaying ? <Icons.Pause /> : <Icons.Play />}
-                  </button>
-                  <button onClick={nextSong} style={{ ...btn("white"), width: "40px", height: "40px" }}><Icons.Next /></button>
-                </div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: isMobile ? "24px" : "32px", margin: isMobile ? "20px 0" : "32px 0" }}>
+                    <button onClick={prevSong} style={{ ...btn(), width: "48px", height: "48px" }}><Icons.Prev /></button>
+                    <button onClick={togglePlay} disabled={saavnUnavailable}
+                      style={{ background: "white", color: "black", borderRadius: "50%", width: isMobile ? "64px" : "80px", height: isMobile ? "64px" : "80px", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", boxShadow: "0 0 40px rgba(255,255,255,0.2)" }}>
+                      {isPlaying ? <Icons.Pause /> : <Icons.Play />}
+                    </button>
+                    <button onClick={nextSong} style={{ ...btn(), width: "48px", height: "48px" }}><Icons.Next /></button>
+                  </div>
 
-                {/* Shuffle / Volume / Repeat */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-                  <button onClick={toggleShuffle} style={{ ...btn(shuffle ? "var(--accent)" : "rgba(255,255,255,0.4)"), width: "32px", height: "32px" }}><Icons.Shuffle /></button>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, margin: "0 12px" }}>
-                    <div style={{ width: "16px", height: "16px", color: "rgba(255,255,255,0.5)", flexShrink: 0 }}><Icons.Volume level={volume} /></div>
-                    <div style={{ flex: 1, position: "relative" }}>
-                      <div style={{ height: "3px", background: "rgba(255,255,255,0.15)", borderRadius: "2px" }}>
-                        <div style={{ height: "100%", width: `${volume * 100}%`, background: "rgba(255,255,255,0.7)", borderRadius: "2px" }} />
-                      </div>
-                      <input type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))}
-                        style={{ position: "absolute", top: "-8px", left: 0, width: "100%", opacity: 0, cursor: "pointer", height: "20px", margin: 0 }} />
+                  <div className="stitch-top" style={{ paddingTop: isMobile ? "16px" : "24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <button onClick={toggleShuffle} style={{ ...btn(shuffle ? "white" : "var(--text-muted)"), width: "40px", height: "40px" }}><Icons.Shuffle /></button>
+                    <div style={{ flex: 1, margin: "0 24px", display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{ width: "16px", height: "16px", color: "var(--text-muted)" }}><Icons.Volume level={volume} /></div>
+                      <input type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))} style={{ flex: 1 }} />
                     </div>
+                    <button onClick={toggleRepeat} style={{ ...btn(repeat !== "none" ? "white" : "var(--text-muted)"), width: "40px", height: "40px" }}><Icons.Repeat mode={repeat} /></button>
                   </div>
-                  <button onClick={toggleRepeat} style={{ ...btn(repeat !== "none" ? "var(--accent)" : "rgba(255,255,255,0.4)"), width: "32px", height: "32px" }}><Icons.Repeat mode={repeat} /></button>
                 </div>
 
-                {/* Up Next button (portrait only) */}
+                {isWide && (
+                  <div className="glass" style={{ flex: 1, padding: "24px", borderRadius: "24px", overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "300px" }}>
+                    <div style={{ fontSize: "10px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)", marginBottom: "16px" }}>Up Next</div>
+                    <DraggableQueue queue={queue} removeFromQueue={removeFromQueue} moveQueueItem={moveQueueItem} playFromQueue={playFromQueue} />
+                  </div>
+                )}
+                
                 {!isWide && (
-                  <button onClick={() => setShowQueue(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "20px", padding: "8px 20px", cursor: "pointer", fontSize: "13px", fontWeight: 600, width: "100%" }}>
-                    <div style={{ width: "16px", height: "16px" }}><Icons.Queue /></div>
-                    Up Next {queue.length > 0 && `(${queue.length})`}
-                    <div style={{ width: "14px", height: "14px" }}><Icons.ChevronUp /></div>
+                  <button onClick={() => setShowQueue(true)} className="glass" style={{ width: "100%", padding: "16px", borderRadius: "16px", border: "1px solid var(--border-thin)", color: "white", fontWeight: 700, fontSize: "14px" }}>
+                    View Queue ({queue.length})
                   </button>
                 )}
               </div>
-
-              {/* Right: Queue (wide only) */}
-              {isWide && (
-                <div style={{ width: "50%", flexShrink: 0, borderLeft: "1px solid rgba(255,255,255,0.1)", display: "flex", flexDirection: "column", minHeight: 0, padding: "16px 24px", boxSizing: "border-box", overflow: "hidden" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px", flexShrink: 0 }}>
-                    Up Next ({queue.length})
-                  </div>
-                  <DraggableQueue queue={queue} removeFromQueue={removeFromQueue} moveQueueItem={moveQueueItem} playFromQueue={playFromQueue} />
-                </div>
-              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Portrait Queue Full-Screen Sheet ── */}
+      {/* ── Portrait Queue Sheet ── */}
       {!isWide && showQueue && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 10000, background: "rgba(0,0,0,0.5)", display: "flex", flexDirection: "column", justifyContent: "flex-end", animation: "fadeIn 0.2s ease" }}
-          onClick={() => setShowQueue(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "#1a1a1a", borderRadius: "20px 20px 0 0", display: "flex", flexDirection: "column", height: "82vh", overflow: "hidden", animation: "slideUp 0.3s cubic-bezier(0.32,0.72,0,1)" }}>
-            <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px", flexShrink: 0 }}>
-              <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.2)", borderRadius: "2px" }} />
+        <div style={{ position: "fixed", inset: 0, zIndex: 10000, background: "rgba(0,0,0,0.8)", display: "flex", flexDirection: "column", justifyContent: "flex-end" }} onClick={() => setShowQueue(false)}>
+          <div onClick={e => e.stopPropagation()} className="glass" style={{ height: "80vh", borderRadius: "32px 32px 0 0", display: "flex", flexDirection: "column", padding: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: "24px" }}>
+              <div style={{ width: "40px", height: "4px", background: "rgba(255,255,255,0.2)", borderRadius: "2px" }} />
             </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 20px 12px", flexShrink: 0 }}>
-              <div>
-                <div style={{ fontSize: "16px", fontWeight: 700, color: "white" }}>Up Next</div>
-                <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", marginTop: "2px" }}>{queue.length} songs</div>
-              </div>
-              <button onClick={() => setShowQueue(false)} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "white", borderRadius: "50%", width: "34px", height: "34px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Icons.ChevronDown />
-              </button>
-            </div>
-            <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", flexShrink: 0 }} />
-            <div style={{ flex: 1, minHeight: 0, padding: "8px 16px", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+            <h3 className="font-syne" style={{ fontSize: "24px", fontWeight: 800, marginBottom: "24px" }}>Up Next</h3>
+            <div className="stitch-top" style={{ flex: 1, overflowY: "auto", paddingTop: "16px" }}>
               <DraggableQueue queue={queue} removeFromQueue={removeFromQueue} moveQueueItem={moveQueueItem} playFromQueue={(i) => { playFromQueue(i); setShowQueue(false); }} />
             </div>
           </div>
         </div>
       )}
 
-      {/* ── 3-dot bottom sheet ── */}
       {showMenu && currentSong && <BottomSheet song={currentSong} onClose={() => setShowMenu(false)} />}
 
       <style>{`
         @keyframes songbounce { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }
         @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(var(--marquee-shift, -200px)); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
       `}</style>
     </>
   );
 }
+
+const ProgressBar = ({ progress, duration, onSeekStart, onSeekChange, onSeekEnd, seekValue, seeking }) => {
+  const pct = duration ? ((seeking ? seekValue : progress) / duration) * 100 : 0;
+  return (
+    <div style={{ position: "relative", width: "100%" }}>
+      <div style={{ height: "4px", background: "rgba(255,255,255,0.1)", borderRadius: "2px" }}>
+        <div style={{ height: "100%", width: `${pct}%`, background: "white", borderRadius: "2px", boxShadow: "0 0 10px rgba(255,255,255,0.5)" }} />
+      </div>
+      <input type="range" min="0" max={duration || 100} value={seeking ? seekValue : progress}
+        onMouseDown={onSeekStart} onTouchStart={onSeekStart}
+        onChange={onSeekChange} onMouseUp={onSeekEnd} onTouchEnd={onSeekEnd}
+        style={{ position: "absolute", top: "-8px", left: 0, width: "100%", opacity: 0, cursor: "pointer", height: "20px", margin: 0 }} />
+    </div>
+  );
+};
+
+const DraggableQueue = ({ queue, removeFromQueue, moveQueueItem, playFromQueue }) => {
+  if (queue.length === 0) return <div style={{ color: "var(--text-muted)", fontSize: "13px", textAlign: "center", padding: "24px 0" }}>Queue is empty</div>;
+  return (
+    <div style={{ overflowY: "auto", flex: 1 }}>
+      {queue.map((song, i) => (
+        <div key={`${song.id}-${i}`} className="stitch-bottom" style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 0", cursor: "pointer" }} onClick={() => playFromQueue(i)}>
+          <img src={song.thumbnail} alt="" style={{ width: "40px", height: "40px", borderRadius: "8px", objectFit: "cover" }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "14px", fontWeight: 600, color: "white", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{song.title}</div>
+            <div style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{song.artist}</div>
+          </div>
+          <button onClick={(e) => { e.stopPropagation(); removeFromQueue(i); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", padding: "8px" }}>✕</button>
+        </div>
+      ))}
+    </div>
+  );
+};
