@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import api, { refreshClient, clearAuthAndRedirect } from "../utils/api";
+import api, { clearAuthAndRedirect } from "../utils/api";
 import { useLibraryStore } from "./libraryStore";
 
 // ── JWT helpers ──────────────────────────────────────────────────────────────
@@ -17,60 +17,7 @@ const decodeToken = (token) => {
   }
 };
 
-const getTokenExp = (token) => {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload.exp ? payload.exp * 1000 : null;
-  } catch {
-    return null;
-  }
-};
 
-// ── Proactive refresh timer ──────────────────────────────────────────────────
-// Fires 1 minute before token expiry to silently get a fresh token.
-// The reactive interceptor in api.js is the safety net if this fires late or fails.
-
-let _proactiveTimer = null;
-const MINUTES_BEFORE_EXPIRY = 1;
-
-const scheduleTokenRefresh = (token) => {
-  if (_proactiveTimer) clearTimeout(_proactiveTimer);
-  if (!token) return;
-
-  const expiresAt = getTokenExp(token);
-  if (!expiresAt) return;
-
-  const refreshIn = expiresAt - Date.now() - MINUTES_BEFORE_EXPIRY * 60 * 1000;
-
-  if (refreshIn <= 0) {
-    // Token already expired or expiring immediately.
-    // Do NOT proactively refresh here — let the reactive interceptor handle it
-    // when the next API call fails with 401. This avoids a startup race condition
-    // where both the proactive timer and fetchMe() try to use the refresh_token.
-    return;
-  }
-
-  _proactiveTimer = setTimeout(doProactiveRefresh, refreshIn);
-};
-
-const doProactiveRefresh = async () => {
-  const refreshToken = localStorage.getItem("refresh_token");
-  if (!refreshToken) return; // No token — reactive interceptor will handle it
-
-  try {
-    const { data } = await refreshClient.post("/api/auth/refresh", {
-      refresh_token: refreshToken,
-    });
-    localStorage.setItem("access_token", data.access_token);
-    localStorage.setItem("refresh_token", data.refresh_token);
-    // Reschedule timer based on the new token's expiry
-    scheduleTokenRefresh(data.access_token);
-  } catch {
-    // Silently fail — the reactive interceptor in api.js is the safety net.
-    // If the refresh_token is expired, the next API call will get a 401 and
-    // the interceptor will correctly log the user out.
-  }
-};
 
 // ── Init: restore session from localStorage ──────────────────────────────────
 const storedToken = localStorage.getItem("access_token");
@@ -85,7 +32,6 @@ export const useAuthStore = create((set, get) => ({
     if (token) {
       const user = decodeToken(token);
       set({ user, token, loading: false });
-      scheduleTokenRefresh(token);
     } else {
       set({ user: null, token: null, loading: false });
     }
@@ -97,7 +43,6 @@ export const useAuthStore = create((set, get) => ({
     localStorage.setItem("refresh_token", data.refresh_token);
     const user = decodeToken(data.access_token);
     set({ user, token: data.access_token });
-    scheduleTokenRefresh(data.access_token);
     useLibraryStore.getState().loadLibrary();
     window.location.href = "/";
   },
@@ -108,11 +53,6 @@ export const useAuthStore = create((set, get) => ({
   },
 
   logout: async () => {
-    // Cancel proactive timer immediately so it doesn't fire during logout
-    if (_proactiveTimer) {
-      clearTimeout(_proactiveTimer);
-      _proactiveTimer = null;
-    }
     try { await api.post("/api/auth/logout"); } catch { }
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
@@ -142,7 +82,6 @@ export const useAuthStore = create((set, get) => ({
       // silently refreshed it during the await above.
       const currentToken = localStorage.getItem("access_token") || token;
       set({ user: data, token: currentToken, loading: false });
-      scheduleTokenRefresh(currentToken);
       useLibraryStore.getState().loadLibrary();
     } catch (err) {
       if (err.response?.status === 401) {
@@ -153,7 +92,6 @@ export const useAuthStore = create((set, get) => ({
         const currentToken = localStorage.getItem("access_token") || token;
         const user = decodeToken(currentToken);
         set({ user, token: currentToken, loading: false });
-        scheduleTokenRefresh(currentToken);
         useLibraryStore.getState().loadLibrary();
       }
     }
