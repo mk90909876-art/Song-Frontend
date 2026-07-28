@@ -23,6 +23,27 @@ const flushQueue = (error, token) => {
   failedQueue = [];
 };
 
+// ── Cross-tab token sync via BroadcastChannel ─────────────────────────────
+const tokenChannel =
+  typeof BroadcastChannel !== "undefined"
+    ? new BroadcastChannel("auth_token_sync")
+    : null;
+
+if (tokenChannel) {
+  tokenChannel.onmessage = (event) => {
+    if (event.data?.type === "TOKEN_REFRESHED") {
+      // Another tab refreshed — update our localStorage and flush any queued requests
+      localStorage.setItem("access_token", event.data.access_token);
+      localStorage.setItem("refresh_token", event.data.refresh_token);
+      flushQueue(null, event.data.access_token);
+    } else if (event.data?.type === "LOGOUT") {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      window.location.href = "/login";
+    }
+  };
+}
+
 // ── Request interceptor: attach access token to every request ─────────────
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token");
@@ -67,6 +88,12 @@ api.interceptors.response.use(
       });
       localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("refresh_token", data.refresh_token);
+      // Notify other tabs about the new tokens
+      tokenChannel?.postMessage({
+        type: "TOKEN_REFRESHED",
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      });
       flushQueue(null, data.access_token);
       original.headers.Authorization = `Bearer ${data.access_token}`;
       return api(original);
@@ -88,6 +115,8 @@ api.interceptors.response.use(
 export function clearAuthAndRedirect() {
   localStorage.removeItem("access_token");
   localStorage.removeItem("refresh_token");
+  // Notify other tabs to logout too
+  tokenChannel?.postMessage({ type: "LOGOUT" });
   window.location.href = "/login";
 }
 
