@@ -36,6 +36,12 @@ export function BottomSheet({ song, onClose }) {
   };
 
   const getBottomOffset = () => {
+    // Measure the actual mini player so the sheet always clears it
+    const miniPlayer = document.querySelector('[data-mini-player="true"]');
+    if (miniPlayer) {
+      const rect = miniPlayer.getBoundingClientRect();
+      return window.innerHeight - rect.top + 8;
+    }
     return window.innerWidth <= 768 ? 90 : 24;
   };
 
