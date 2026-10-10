@@ -39,6 +39,33 @@ export const stopNudgeHeartbeat = () => {
   if (nudgeInterval) { clearInterval(nudgeInterval); nudgeInterval = null; }
 };
 
+// ── Wake Lock ─────────────────────────────────────────────────
+// Prevents Android from fully suspending the tab during playback.
+// This is critical on Android 13+ where the OS aggressively kills
+// background tabs that aren't holding a wake lock.
+let wakeLock = null;
+
+export const requestWakeLock = async () => {
+  if (!("wakeLock" in navigator)) return;
+  try {
+    // Only request if we don't already hold one
+    if (wakeLock && !wakeLock.released) return;
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+  } catch (err) {
+    // Wake lock request can fail if tab is not visible — that's ok,
+    // we'll re-request on visibilitychange
+    console.warn("Wake lock request failed:", err.message);
+  }
+};
+
+export const releaseWakeLock = async () => {
+  if (wakeLock && !wakeLock.released) {
+    try { await wakeLock.release(); } catch { }
+    wakeLock = null;
+  }
+};
+
 export const initAudioSession = () => {
   if (audioCtx) return;
   try {
@@ -56,7 +83,7 @@ export const initAudioSession = () => {
 export const resumeAudioSession = async () => {
   if (!audioCtx) return;
   if (audioCtx.state === "suspended") {
-    try { await audioCtx.resume(); } catch {}
+    try { await audioCtx.resume(); } catch { }
   }
   nudgeVolume();
 };
@@ -66,11 +93,42 @@ export const unlockAudioSession = async () => {
   await resumeAudioSession();
 };
 
+// ── Recovery Callback ─────────────────────────────────────────
+// playerStore registers its nextSong function here once at init.
+// This avoids a circular import: audioSession ← playerStore ← audioSession.
+let _recoveryNextSong = null;
+export const registerRecoveryCallback = (nextSongFn) => {
+  _recoveryNextSong = nextSongFn;
+};
+
 // ── Recovery listeners ────────────────────────────────────────
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     resumeAudioSession();
     setTimeout(nudgeVolume, 300);
+
+    // Re-acquire wake lock (it gets released when tab is hidden on some devices)
+    const el = window._audioEl;
+    if (el && !el.paused) {
+      requestWakeLock();
+    }
+
+    // ── Auto-resume recovery ──────────────────────────────────
+    // If playback stopped while backgrounded (Android killed the JS context),
+    // call nextSong via the registered callback — no import needed.
+    setTimeout(() => {
+      try {
+        const el = window._audioEl;
+        if (
+          _recoveryNextSong &&
+          el && el.paused &&
+          (el.ended || (el.duration > 0 && el.currentTime >= el.duration - 1))
+        ) {
+          console.log("Background recovery: auto-advancing to next song");
+          _recoveryNextSong();
+        }
+      } catch { }
+    }, 500);
   }
 });
 window.addEventListener("pageshow", () => resumeAudioSession());

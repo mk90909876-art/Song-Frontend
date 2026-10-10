@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { saavnToSong } from "../utils/saavn";
 import api from "../utils/api";
-import { resumeAudioSession, nudgeVolume, startNudgeHeartbeat, stopNudgeHeartbeat } from "../utils/audioSession";
+import { resumeAudioSession, nudgeVolume, startNudgeHeartbeat, stopNudgeHeartbeat, requestWakeLock, releaseWakeLock, registerRecoveryCallback } from "../utils/audioSession";
 
 const MAX_HISTORY = 50;
 const MAX_SEARCH_HISTORY = 20;
@@ -107,6 +107,8 @@ const preResolveQueueUrls = async (storeGet) => {
 // ── Single Audio Element ──────────────────────────────────────
 let _currentLoadId = 0;
 let _isTransitioning = false; // Flag to prevent Android killing notification between songs
+let _preResolvedNextUrl = null; // Pre-resolved URL for the next song in queue
+let _preResolvedNextId = null; // ID of the song whose URL was pre-resolved
 
 const getAudio = () => {
   if (!window._audioEl) {
@@ -130,6 +132,27 @@ const getAudio = () => {
             });
           }
         } catch { }
+
+        // ── Pre-resolve next song URL ~15s before current ends ──
+        // This is critical for Android background playback: by resolving
+        // the URL while we're still actively playing (and the tab is alive),
+        // the ended->nextSong transition needs zero network calls.
+        const remaining = el.duration - el.currentTime;
+        if (el.duration > 0 && remaining > 0 && remaining <= 15) {
+          const { queue, shuffle } = usePlayerStore.getState();
+          if (queue.length > 0) {
+            const nextIdx = shuffle ? 0 : 0; // Pre-resolve first item regardless
+            const nextSong = queue[nextIdx];
+            if (nextSong && nextSong.id !== _preResolvedNextId) {
+              _preResolvedNextId = nextSong.id;
+              resolveSaavnUrl(nextSong).then(url => {
+                if (url && nextSong.id === _preResolvedNextId) {
+                  _preResolvedNextUrl = url;
+                }
+              }).catch(() => {});
+            }
+          }
+        }
       }
     });
 
@@ -140,8 +163,107 @@ const getAudio = () => {
       if (song) setMediaSession(song);
     });
 
-    el.addEventListener("ended", () => {
-      if (el.currentTime > 1) usePlayerStore.getState().nextSong();
+    el.addEventListener("ended", async () => {
+      // Run as async so the await chain below (URL resolve → el.play) stays
+      // within one task, giving Android less opportunity to suspend JS mid-call.
+      if (el.currentTime <= 1) return;
+
+      const state = usePlayerStore.getState();
+      const { queue, shuffle, repeat, history } = state;
+
+      // Repeat-one: just restart
+      if (repeat === "one") {
+        el.currentTime = 0;
+        try { await el.play(); } catch { }
+        state.setProgress(0);
+        return;
+      }
+
+      // No queue and repeat-all: restart from history
+      if (!queue.length) {
+        if (repeat === "all" && history.length) {
+          state.playSong(history[history.length - 1], { fromQueue: true });
+        } else {
+          state.setIsPlaying(false);
+        }
+        return;
+      }
+
+      const idx = shuffle ? Math.floor(Math.random() * queue.length) : 0;
+      const next = queue[idx];
+
+      // Use pre-resolved URL if ready; otherwise resolve now (network call).
+      // Either way, we await it here so play() is called in the same async task.
+      let url = (_preResolvedNextUrl && _preResolvedNextId === next.id)
+        ? _preResolvedNextUrl
+        : null;
+
+      if (!url) {
+        // Inject any existing downloadUrl into the song first (library songs)
+        try { url = await resolveSaavnUrl(next); } catch { }
+      }
+
+      _preResolvedNextUrl = null;
+      _preResolvedNextId = null;
+
+      if (!url) {
+        // URL unavailable — fall back to the normal playSong path
+        state.nextSong();
+        return;
+      }
+
+      // Inject URL so playSong's resolveSaavnUrl() finds it immediately
+      if (!next.downloadUrl?.length) {
+        next.downloadUrl = [{ quality: "320kbps", url }];
+      }
+
+      // Transition: set _isTransitioning before touching el.src
+      _isTransitioning = true;
+      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+
+      el.src = url;
+      el.load();
+      try {
+        await el.play();
+      } catch (err) {
+        console.warn("ended auto-play blocked:", err.message);
+        // Play was blocked — let the store handle state cleanly
+        state.nextSong();
+        return;
+      }
+
+      // Update store state after successful play
+      const newQueue = queue.filter((_, i) => i !== idx);
+      const newHistory = state.currentSong
+        ? [state.currentSong, ...state.history.filter(h => h.id !== state.currentSong.id)].slice(0, 50)
+        : state.history;
+
+      usePlayerStore.setState({
+        currentSong: next,
+        isPlaying: true,
+        queue: newQueue,
+        history: newHistory,
+        progress: 0,
+        duration: 0,
+        saavnUnavailable: false,
+      });
+
+      // Sync MediaSession metadata for the new track
+      setMediaSession(next);
+
+      // Persist session
+      try {
+        localStorage.setItem("session_song", JSON.stringify(next));
+        localStorage.setItem("session_queue", JSON.stringify(newQueue));
+        localStorage.setItem("session_progress", "0");
+        localStorage.setItem("session_history", JSON.stringify(newHistory));
+      } catch { }
+
+      // Refill queue if running low
+      const autoQueue = localStorage.getItem("autoQueue") !== "false";
+      if (autoQueue && newQueue.filter(s => s.id !== next.id).length < 10) {
+        setTimeout(() => usePlayerStore.getState().fetchSuggestions(next), 3000);
+      }
     });
 
     // ── Error recovery: auto-skip to next song instead of dead stop ──
@@ -162,6 +284,7 @@ const getAudio = () => {
       _isTransitioning = false;
       usePlayerStore.getState().setIsPlaying(true);
       resumeAudioSession();
+      requestWakeLock(); // Keep Android from suspending the tab
       startNudgeHeartbeat();
       setTimeout(nudgeVolume, 100);
       if ("mediaSession" in navigator) {
@@ -176,6 +299,7 @@ const getAudio = () => {
       if (_isTransitioning) return; // Don't tell OS we paused during song switch
       usePlayerStore.getState().setIsPlaying(false);
       stopNudgeHeartbeat();
+      releaseWakeLock(); // Release wake lock when truly paused
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
     });
 
@@ -324,6 +448,9 @@ export const usePlayerStore = create((set, get) => ({
     el.volume = get().volume;
 
     const loadId = ++_currentLoadId;
+    // Clear pre-resolved cache since we're loading a new song
+    _preResolvedNextUrl = null;
+    _preResolvedNextId = null;
 
     const playAudio = (url, savedPos) => {
       el.src = url;
@@ -428,6 +555,19 @@ export const usePlayerStore = create((set, get) => ({
     const idx = shuffle ? Math.floor(Math.random() * queue.length) : 0;
     const next = queue[idx];
 
+    // ── Use pre-resolved URL if available (critical for Android background) ──
+    // If we pre-resolved this song's URL during the timeupdate handler,
+    // inject it into the song object so playSong() can skip the network call.
+    if (_preResolvedNextUrl && _preResolvedNextId === next.id) {
+      if (!next.downloadUrl?.length) {
+        // Inject the pre-resolved URL as a downloadUrl entry so resolveSaavnUrl()
+        // finds it immediately without making a network call
+        next.downloadUrl = [{ quality: "320kbps", url: _preResolvedNextUrl }];
+      }
+    }
+    _preResolvedNextUrl = null;
+    _preResolvedNextId = null;
+
     const newQueue = queue.filter((_, i) => i !== idx);
     get().playSong(next, { fromQueue: true, updatedQueue: newQueue });
   },
@@ -505,3 +645,9 @@ export const usePlayerStore = create((set, get) => ({
   },
   toggleAutoQueue: () => set(s => { const v = !s.autoQueue; localStorage.setItem("autoQueue", v); return { autoQueue: v }; }),
 }));
+
+// ── Register recovery callback with audioSession ──────────────
+// audioSession needs a way to call nextSong on visibility-recovery
+// without importing playerStore (which would create a circular dep).
+// We pass a thin arrow so it always calls the latest store state.
+registerRecoveryCallback(() => usePlayerStore.getState().nextSong());

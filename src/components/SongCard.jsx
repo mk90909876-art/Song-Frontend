@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { usePlayerStore } from "../store/playerStore";
 import LikeButton from "./LikeButton";
 import { useLibraryStore } from "../store/libraryStore";
@@ -45,7 +46,7 @@ export function BottomSheet({ song, onClose }) {
     return window.innerWidth <= 768 ? 90 : 24;
   };
 
-  return (
+  return createPortal(
     <>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, backdropFilter: "blur(4px)" }} />
       <div className="glass" style={{
@@ -87,7 +88,8 @@ export function BottomSheet({ song, onClose }) {
         </div>
       </div>
       <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
-    </>
+    </>,
+    document.body
   );
 }
 
