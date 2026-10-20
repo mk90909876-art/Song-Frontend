@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useAuthStore } from "./store/authStore";
 import AppLayout from "./components/AppLayout";
 import AuthPage from "./pages/AuthPage";
+import PrivacyPage from "./pages/PrivacyPage";
 import { unlockAudioSession } from "./utils/audioSession";
 
 export default function App() {
@@ -32,7 +33,10 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public routes – accessible without authentication */}
         <Route path="/login" element={<AuthPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        {/* Protected app shell */}
         <Route path="/*" element={token ? <AppLayout /> : <AuthPage />} />
       </Routes>
     </BrowserRouter>

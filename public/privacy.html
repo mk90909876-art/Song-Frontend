@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Policy – Song</title>
+    <meta name="description" content="Song Privacy Policy – how we handle your data, audio streaming, and account information." />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #0a0a0a;
+        color: #e5e5e5;
+        line-height: 1.7;
+        padding: 40px 20px 80px;
+      }
+      .container { max-width: 720px; margin: 0 auto; }
+      h1 { font-size: 2rem; font-weight: 800; color: #ffffff; margin-bottom: 8px; }
+      .meta { font-size: 13px; color: #888; margin-bottom: 40px; }
+      h2 { font-size: 1.15rem; font-weight: 700; color: #ff4d4d; margin: 36px 0 10px; }
+      p { font-size: 15px; color: #ccc; margin-bottom: 12px; }
+      ul { padding-left: 20px; margin-bottom: 12px; }
+      li { font-size: 15px; color: #ccc; margin-bottom: 6px; }
+      a { color: #ff4d4d; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .back { display: inline-block; margin-bottom: 32px; font-size: 14px; color: #888; }
+      .back:hover { color: #fff; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <a href="/" class="back">← Back to Song</a>
+      <h1>Privacy Policy</h1>
+      <p class="meta">Last updated: October 2026 &nbsp;|&nbsp; Effective: October 2026</p>
+
+      <h2>1. Who We Are</h2>
+      <p>Song ("we", "our", "the app") is a private music player application. We are committed to protecting your privacy and handling your personal data transparently.</p>
+
+      <h2>2. Data We Collect</h2>
+      <p>We collect only the minimum data necessary to provide the service:</p>
+      <ul>
+        <li><strong>Account information</strong>: Email address and username (used for authentication via Supabase).</li>
+        <li><strong>Library data</strong>: Your playlists, liked songs, and listening preferences stored in our database.</li>
+        <li><strong>Session tokens</strong>: Short-lived authentication tokens stored in your browser's memory or localStorage — never in third-party advertising cookies.</li>
+      </ul>
+
+      <h2>3. Data We Do NOT Collect</h2>
+      <ul>
+        <li>We do <strong>not</strong> use Google Analytics, Facebook Pixel, or any behavioral advertising trackers.</li>
+        <li>We do <strong>not</strong> sell, rent, or share your personal data with advertisers or third parties.</li>
+        <li>We do <strong>not</strong> track your listening habits for advertising profiling.</li>
+        <li>We do <strong>not</strong> collect your device's camera, microphone, or geolocation data.</li>
+      </ul>
+
+      <h2>4. Audio Streaming</h2>
+      <p>Song fetches audio stream URLs on-demand from JioSaavn's public CDN (<code>*.saavncdn.com</code>). These requests are proxied through our backend API (<code>song-backend-462r.onrender.com</code>). No audio content is stored on our servers. Your IP address may be visible to CDN nodes during stream playback, as with any web-based audio player.</p>
+
+      <h2>5. Third-Party Services</h2>
+      <p>We use the following third-party services:</p>
+      <ul>
+        <li><strong>Supabase</strong> (<a href="https://supabase.com/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>): Authentication and database storage.</li>
+        <li><strong>Google Fonts</strong> (<a href="https://developers.google.com/fonts/faq/privacy" target="_blank" rel="noopener noreferrer">Privacy FAQ</a>): Font delivery via CSS stylesheet.</li>
+        <li><strong>Render.com</strong> (<a href="https://render.com/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>): Backend API hosting.</li>
+        <li><strong>Cloudflare Pages</strong> (<a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener noreferrer">Privacy Policy</a>): Static frontend hosting and CDN.</li>
+      </ul>
+
+      <h2>6. Data Security</h2>
+      <p>All communications between your browser and our servers are encrypted via TLS (HTTPS). Authentication tokens are short-lived and stored only in browser memory. We enforce HTTP security headers (Content-Security-Policy, HSTS, X-Frame-Options) to protect against common web attacks.</p>
+
+      <h2>7. Data Retention</h2>
+      <p>Your account data (email, playlists, liked songs) is retained for as long as your account is active. You can request deletion of your account and all associated data by contacting us.</p>
+
+      <h2>8. Your Rights</h2>
+      <p>You have the right to:</p>
+      <ul>
+        <li>Access, correct, or delete your personal data.</li>
+        <li>Withdraw consent at any time (by deleting your account).</li>
+        <li>Lodge a complaint with a data protection authority if you believe your rights have been violated.</li>
+      </ul>
+
+      <h2>9. Cookies</h2>
+      <p>Song does not use advertising or tracking cookies. We use only functional session tokens required for authentication. No third-party cookies are placed on your device.</p>
+
+      <h2>10. Changes to This Policy</h2>
+      <p>We may update this Privacy Policy from time to time. Material changes will be communicated through the app. The "Last updated" date above will always reflect the most recent revision.</p>
+
+      <h2>11. Contact</h2>
+      <p>For any privacy-related questions, please contact us via the app's settings page or through our GitHub repository.</p>
+
+      <p style="margin-top:48px; font-size:12px; color:#555;">&copy; <script>document.write(new Date().getFullYear())</script> Song. All rights reserved.</p>
+    </div>
+  </body>
+</html>

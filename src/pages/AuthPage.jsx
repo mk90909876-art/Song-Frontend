@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 
 export default function AuthPage() {
@@ -143,6 +143,29 @@ export default function AuthPage() {
           </button>
         </form>
       </div>
+
+      {/* Footer – Privacy Policy link for compliance scanners */}
+      <footer style={{
+        marginTop: "24px",
+        textAlign: "center",
+        fontSize: "12px",
+        color: "#555",
+        display: "flex",
+        gap: "8px",
+        justifyContent: "center",
+        alignItems: "center",
+      }}>
+        <Link
+          to="/privacy"
+          style={{ color: "#666", textDecoration: "underline" }}
+          onMouseEnter={(e) => (e.target.style.color = "#aaa")}
+          onMouseLeave={(e) => (e.target.style.color = "#666")}
+        >
+          Privacy Policy
+        </Link>
+        <span>•</span>
+        <span>© {new Date().getFullYear()} Song</span>
+      </footer>
     </div>
   );
 }
